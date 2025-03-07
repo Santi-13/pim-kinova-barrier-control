@@ -21,7 +21,7 @@ theta = t * (2 * pi / t(end)) - (pi / 2);
 points = center + radius * [0 * ones(size(theta)), cos(theta), sin(theta)];
 
 %% Force control gain
-Kp = 0.5; % (N/m)
+Kp = 0.2; % (N/m)
 
 %% Initialize visualization
 figure(1);
@@ -34,6 +34,10 @@ view([60, 10]);
 grid minor;
 axis auto equal;
 
+%% Motion model
+motionModel = jointSpaceMotionModel('RigidBodyTree',kinova1);
+motionModel.updateErrorDynamicsFromStep()
+
 for i = 1:size(points, 1)
     % Get current end-effector position
     T_current = getTransform(kinova1, q_init, eeName);
@@ -44,7 +48,7 @@ for i = 1:size(points, 1)
     pos_desired = points(i, :)';
 
     % Error calc
-    error = [pos_desired - pos_current; rot_current];
+    error = [pos_desired - pos_current; zeros(3,1)];
     J = geometricJacobian(kinova1,q_init,eeName);
     
     % Get end-effector velocity
@@ -64,6 +68,7 @@ for i = 1:size(points, 1)
     q_dot_init = q_dot_init + q_ddot * dt;
     q_init = q_init + q_dot_init * dt;
     
+
     % Visualize
     show(kinova1, q_init, 'PreservePlot', false);
     drawnow;
