@@ -21,7 +21,7 @@ theta = t * (2 * pi / t(end)) - (pi / 2);
 points = center + radius * [0 * ones(size(theta)), cos(theta), sin(theta)];
 
 %% Force control gain
-Kp = 0.5; % (N/m)
+Kp = 0.4; % (N/m)
 
 %% Initialize visualization
 figure(1);
