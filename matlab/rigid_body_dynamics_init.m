@@ -13,5 +13,5 @@ kinova1.Gravity = [0, 0, -9.81];
 %% Initial positions
 q_home = [0 15 -130 0 55 90]' * pi / 180; % Starting joint angles
 
-%% Force control gain
-Kp = 10; % (N/m)
+%% Force control gain [x,y,z]
+Kp = [10 10 10]; % (N/m)
