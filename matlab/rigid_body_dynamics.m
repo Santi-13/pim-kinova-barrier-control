@@ -1,6 +1,9 @@
 clear;
 clc;
 clf;
+%% Description
+% Run this script to load the necessary variables for the
+% rigid_body_dynamics.slx simulation. Only change Kp.
 
 %% Load the Kinova Gen3 6-DOF robot model
 kinova1 = importrobot("GEN3-6DOF_NO-VISION_URDF_ARM_V01.urdf", 'DataFormat', 'column');
