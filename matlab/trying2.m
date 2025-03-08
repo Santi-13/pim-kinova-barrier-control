@@ -1,83 +1,38 @@
 clear;
 clc;
 clf;
-%%
-robot = importrobot("GEN3-6DOF_NO-VISION_URDF_ARM_V01.urdf",'DataFormat','column'); %Create the Kinova1 Model
+
+% Load the Kinova Gen3 6-DOF robot model
+robot = importrobot("GEN3-6DOF_NO-VISION_URDF_ARM_V01.urdf", 'DataFormat', 'column');
 numJoints = numel(homeConfiguration(robot));
-endEffector = "end_effector_link"; 
 
-%%
-% Initial end-effector pose
-initialPos = [0.4 0 0.2];
-initialRot = [0 1 0 pi];
-taskInit = trvec2tform([initialPos])*axang2tform(initialRot);
+%% Initial positions
+tSpan = 0:0.01:1;
+initialState = [homeConfiguration(robot); zeros(6,1)];
 
-% Compute current robot joint configuration using inverse kinematics
-ik = inverseKinematics('RigidBodyTree', robot);
-ik.SolverParameters.AllowRandomRestart = false;
-weights = [1 1 1 1 1 1];
-currentRobotJConfig = ik(endEffector, taskInit, weights, robot.homeConfiguration);
 
-% The IK solver respects joint limits, but for those joints with infinite
-% range, they must be wrapped to a finite range on the interval [-pi, pi].
-% Since the other joints are already bounded within this range, it is
-% sufficient to simply call wrapToPi on the entire robot configuration
-% rather than only on the joints with infinite range.
-currentRobotJConfig = wrapToPi(currentRobotJConfig);
+%% Define trajectory parameters
+targetJointPosition = [0;0;0;1;1;1];
 
-% Final (desired) end-effector pose
-finalPos = [0.35 0.55 0.35];
-finalRot = [0 1 0 pi];
-taskFinal = trvec2tform([0.35 0.55 0.35])*axang2tform([0 1 0 pi]);  
-anglesFinal = rotm2eul(taskFinal(1:3,1:3),'XYZ');
-poseFinal = [taskFinal(1:3,4);anglesFinal']; % 6x1 vector for final pose: [x, y, z, phi, theta, psi]
+qDesPD  = [targetJointPosition; -1; pi/2; -pi/2; pi/4; 0; 0];
 
-%%
-maxIters = 50;
-u0 = zeros(1,numJoints);
-mv = u0;
-time = 0;
-goalReached = false;
-x0 = [currentRobotJConfig', zeros(1,numJoints)];
+pdMotion = jointSpaceMotionModel("RigidBodyTree",robot,"MotionType","PDControl");
+pdMotion.Kp = diag(300*ones(1,6));
+pdMotion.Kd = diag(10*ones(1,6));
 
-% Init data arrays
-positions = zeros(numJoints,maxIters);
-positions(:,1) = x0(1:numJoints)';
+[tPD,yPD] = ode15s(@(t,y)derivative(pdMotion,y,qDesPD),tSpan,initialState);
 
-velocities = zeros(numJoints,maxIters);
-velocities(:,1) = x0(numJoints+1:end)';
-
-accelerations = zeros(numJoints,maxIters);
-accelerations(:,1) = u0';
-
-timestamp = zeros(1,maxIters);
-timestamp(:,1) = time;
-
-velocity = 
-
-%%
-for timestep=1:maxIters
-    disp(['Calculating control at timestep ', num2str(timestep)]);
-    % Optimize next trajectory point 
-    [mv,options,info] = nlmpcmove(nlobj,x0,mv,[],[], options);
-    if info.ExitFlag < 0
-        disp('Failed to compute a feasible trajectory. Aborting...')
-        break;
-    end
-    % Update states and time for next iteration
-    x0 = info.Xopt(2,:);
-    time = time + dt;
-    % Store trajectory points
-    positions(:,timestep+1) = x0(1:numJoints)';
-    velocities(:,timestep+1) = x0(numJoints+1:end)';
-    accelerations(:,timestep+1) = info.MVopt(2,:)';
-    timestamp(timestep+1) = time;
-end
-
-motionModel = jointSpaceMotionModel('RigidBodyTree',robot);
-
-% Control robot to target trajectory points in simulation using low-fidelity model
-initState = [positions(:,1);velocities(:,1)];
-targetStates = [positions;velocities;accelerations]';    
-[t,robotStates] = ode15s(@(t,state) helperTimeBasedStateInputsKINOVA(motionModel,timestamp,targetStates,t,state),...
-                                    [timestamp(1):visTimeStep:timestamp(end)],initState);
+% PD with Gravity Compensation
+figure
+subplot(2,1,1)
+plot(tPD,yPD(:,1:numJoints))
+hold on
+plot(tPD,targetJointPosition*ones(1,length(tPD)),"--")
+title("PD Controlled Joint Motion: Position")
+xlabel("Time (s)")
+ylabel("Position (rad)")
+subplot(2,1,2)
+plot(tPD,yPD(:,numJoints+1:end))
+title("Joint Velocity")
+xlabel("Time (s)")
+ylabel("Velocity (rad/s)")

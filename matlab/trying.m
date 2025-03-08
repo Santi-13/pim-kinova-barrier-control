@@ -5,6 +5,7 @@ clf;
 % Load the Kinova Gen3 6-DOF robot model
 kinova1 = importrobot("GEN3-6DOF_NO-VISION_URDF_ARM_V01.urdf", 'DataFormat', 'column');
 eeName = "end_effector_link"; % End effector name
+kinova1.Gravity = [0, 0, -9.81];
 
 %% Initial positions
 q_home = [0 15 -130 0 55 90]' * pi / 180; % Starting joint angles
@@ -34,6 +35,7 @@ view([60, 10]);
 grid minor;
 axis auto equal;
 
+
 for i = 1:size(points, 1)
     % Get current end-effector position
     T_current = getTransform(kinova1, q_init, eeName);
@@ -44,7 +46,7 @@ for i = 1:size(points, 1)
     pos_desired = points(i, :)';
 
     % Error calc
-    error = [pos_desired - pos_current; rot_current];
+    error = [pos_desired - pos_current; zeros(3,1)];
     J = geometricJacobian(kinova1,q_init,eeName);
     
     % Get end-effector velocity
@@ -53,16 +55,16 @@ for i = 1:size(points, 1)
     % Get end-effector applied force (F = hc)
     hc = Kp * error;
 
-    % Get joint torques
+    % Get joint torques    
     tau = J' * hc;
 
     % Compute joint accelerations (forward dynamics)
     M = massMatrix(kinova1, q_init);
-    q_ddot = M \ (tau);
-
-    % Integrate to update velocities and positions
-    q_dot_init = q_dot_init + q_ddot * dt;
-    q_init = q_init + q_dot_init * dt;
+    C = velocityProduct(kinova1, q_init, q_dot_init);
+    G = gravityTorque(kinova1, q_init);
+    
+    q_ddot = M \ (tau - transpose(C) * q_dot_init - G);
+    q_dot_init = C \ (tau - M * q_ddot - G);
     
     % Visualize
     show(kinova1, q_init, 'PreservePlot', false);
