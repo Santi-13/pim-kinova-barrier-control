@@ -1,0 +1,7 @@
+[A, B, C, D] = linmod('dynamic_system_alone');
+sys = ss(A, B, C, D);
+
+
+io = getlinio('dynamic_system_alone'); % Get input/output points
+op = operpoint('dynamic_system_alone'); % Get operating point
+sys = linearize('dynamic_system_alone', op, io);

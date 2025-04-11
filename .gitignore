@@ -6,6 +6,13 @@ __pycache__/
 # C extensions
 *.so
 
+# pdf files
+.pdf 
+
+# Solid
+/slprj
+/solid
+
 # Distribution / packaging
 .Python
 build/
