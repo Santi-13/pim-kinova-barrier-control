@@ -1,6 +1,5 @@
 class Utils:
     def __init__(self):
-        self.default_cartesian_angles_front = [90.0, 0.0, 90.0]
         pass
 
     def base_to_robot_1_coordinates(self, base_frame: list[float]):
