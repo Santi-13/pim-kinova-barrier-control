@@ -7,12 +7,14 @@ from kortex_api.autogen.client_stubs.BaseClientRpc import BaseClient
 from kortex_api.autogen.messages import Base_pb2, Session_pb2, Common_pb2
 import time
 
-class KinovaDualArmController:
+from utils import Utils
+
+class KinovaDualArmController(Utils):
     def __init__(self, 
                  ips: list[str], 
                  ports: list[int] = [10000, 10001],
                  credentials: list[tuple[str, str]] = [("admin", "admin")]*2):
-        
+        super().__init__()
         if len(ips) != 2 or len(credentials) != 2:
             raise ValueError("Requires exactly 2 IP addresses and credential pairs")
         
@@ -107,18 +109,6 @@ class KinovaDualArmController:
     def __exit__(self, exc_type, exc_val, exc_tb):
         self._safe_teardown()
 
-    def _is_pose_reachable(self, arm_index: int, target: list) -> bool:
-        """Check if target is within workspace boundaries"""
-        # Get robot's Cartesian limits
-        base = self.arms[arm_index]['base']
-        workspace_info = base.GetMeasuredWorkspace()
-        
-        return (
-            workspace_info.x_min <= target[0] <= workspace_info.x_max and
-            workspace_info.y_min <= target[1] <= workspace_info.y_max and
-            workspace_info.z_min <= target[2] <= workspace_info.z_max
-        )
-
     def _home_arm(self, arm_index: int):
         """Home individual arm with feedback"""
         print(f"Homing arm {arm_index}...")
@@ -168,6 +158,19 @@ class KinovaDualArmController:
         
         return action
     
+    def _build_joint_action(self, arm_index: int, angles_deg: list):
+        """Create a joint angle action for specified arm"""
+        if len(angles_deg) != 6:
+            raise ValueError("Requires exactly 6 joint angles")
+            
+        action = Base_pb2.Action()
+        action.name = f"Arm_{arm_index}_Joint_Action"
+        action.reach_joint_angles.joint_angles.joint_angles.extend([
+            Base_pb2.JointAngle(joint_identifier=i, value=angles_deg[i])
+            for i in range(6)
+        ])
+        return action
+    
     def coordinated_cartesian_move(self, 
                         targets: list[list[float]], 
                         timeout: float = 30.0) -> None:
@@ -215,15 +218,77 @@ class KinovaDualArmController:
         finally:
             for i, handle in enumerate(handles):
                 self.arms[i]['base'].Unsubscribe(handle)
+
+    def coordinated_joint_move(self, targets: list, timeout: float = 30.0):
+        """Execute synchronized joint movement on both arms"""
+        if len(targets) != 2 or any(len(t) != 6 for t in targets):
+            raise ValueError("Requires joint targets for both arms (6 angles each)")
+        
+        events = [threading.Event() for _ in range(2)]
+        handles = []
+        
+        try:
+            # Build and execute actions
+            for i in range(2):
+                action = self._build_joint_action(i, targets[i])
+                notif_handle = self.arms[i]['base'].OnNotificationActionTopic(
+                    self._notification_factory(events[i]),
+                    Base_pb2.NotificationOptions()
+                )
+                handles.append(notif_handle)
+                self.arms[i]['base'].ExecuteAction(action)
+            
+            # Wait for completion
+            start_time = time.time()
+            while time.time() - start_time < timeout:
+                if all(e.is_set() for e in events):
+                    return True
+                time.sleep(0.1)
+            raise TimeoutError("Joint movement timed out")
+        
+        finally:
+            for i, handle in enumerate(handles):
+                self.arms[i]['base'].Unsubscribe(handle)
+
+    def target_objective(self, target_pose: list[float], timeout: float = 30.0) -> None:
+        """Move both arms to a target pose"""
+        if len(target_pose) != 3:
+            raise ValueError("Requires exactly 3 coordinates for target pose")
+        
+        # Check what robot the target is closer to
+        if target_pose[1] > 0:
+            robot_1_coords = self.base_to_robot_1_coordinates(target_pose)
+
+            # Get current pose to validate against
+            current_pose = self.arms[1]['base'].GetMeasuredCartesianPose()
+            robot_2_coords = [current_pose.x, current_pose.y, current_pose.z]
+        else:
+            robot_2_coords = self.base_to_robot_2_coordinates(target_pose)
+
+            # Get current pose to validate against
+            current_pose = self.arms[0]['base'].GetMeasuredCartesianPose()
+            robot_1_coords = [current_pose.x, current_pose.y, current_pose.z]
+
+        self.coordinated_cartesian_move([robot_1_coords, robot_2_coords], timeout)
+
 # Usage Example
 if __name__ == "__main__":
     try:
         ROBOT_IPS = ["192.168.1.10", "192.168.1.11"]
         PORTS = [10000, 10000]
         with KinovaDualArmController(ROBOT_IPS, PORTS) as dual_arm:
-            dual_arm.coordinated_cartesian_move(
-                [[0.75, -0.02, 0.4], [0.75, -0.02, 0.4]]
-            )
+            # robot_1_coords = dual_arm.base_to_robot_1_coordinates([0.75, 0.15, 0.4])
+            # robot_2_coords = dual_arm.base_to_robot_2_coordinates([0.75, -0.15, 0.4])
+            # print(robot_1_coords)
+            # dual_arm.coordinated_cartesian_move(
+            #     [robot_1_coords, robot_2_coords]
+            # )
+            # dual_arm.coordinated_joint_move(
+            #     [[360, 0, 0, 360, 360, 360], [360, 0, 0, 360, 360, 360]]
+            # )
+
+            target_pose = [0.8, 0.15, 0.3] # Position of a target relative to the robot base
+            dual_arm.target_objective(target_pose)
             print("Dual arm movement successful!")
     except Exception as e:
         print(f"Dual arm operation failed: {str(e)}")

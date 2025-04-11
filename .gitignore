@@ -6,8 +6,11 @@ __pycache__/
 # C extensions
 *.so
 
+# MATLAB autosave
+*.autosave
+
 # pdf files
-.pdf 
+*.pdf 
 
 # Solid
 /slprj
