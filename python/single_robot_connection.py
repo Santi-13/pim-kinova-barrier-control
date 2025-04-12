@@ -197,18 +197,18 @@ class SingleRobotController:
 # Usage Example
 if __name__ == "__main__":
     try:
-        # Replace with your robot's IP
-        ROBOT_IP = "192.168.1.11"  
-        PORT = 10000
-        with SingleRobotController(ROBOT_IP, PORT) as robot:
-            # Example target position (degrees for each of 6 joints)
-            target_angles = [0.0, 15.0, 180.0, 0.0, 30.0, 90.0]
-            coordinates = [0.85, -0.02, 0.4] # Meters
+        # # Replace with your robot's IP
+        # ROBOT_IP = "192.168.1.11"  
+        # PORT = 10000
+        # with SingleRobotController(ROBOT_IP, PORT) as robot:
+        #     # Example target position (degrees for each of 6 joints)
+        #     target_angles = [0.0, 15.0, 180.0, 0.0, 30.0, 90.0]
+        #     coordinates = [0.85, -0.02, 0.4] # Meters
             
-            #robot.move_to_joint_angles(target_angles)
-            robot.move_to_coordinates(coordinates)
+        #     #robot.move_to_joint_angles(target_angles)
+        #     robot.move_to_coordinates(coordinates)
             
-        print("Operation completed successfully")
+        # print("Operation completed successfully")
 
 
         ROBOT_IP = "192.168.1.10"  
