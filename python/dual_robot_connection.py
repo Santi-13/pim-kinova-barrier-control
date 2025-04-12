@@ -32,10 +32,17 @@ class KinovaDualArmController(Utils):
         """Establish secure session-managed connection"""
         try:
             self.arms = []
+            
             try:
                 for i in range(2):
-                    arm = self._create_arm_connection(self.ips[i], self.ports[i], self.credentials[i])
-                    self.arms.append(arm)
+                    try:
+                        arm = self._create_arm_connection(self.ips[i], self.ports[i], self.credentials[i])
+                        self.arms.append(arm)
+                        
+                    except:
+                        self._safe_teardown()
+                        raise
+
                 
                 print("Homing both arms...")
                 
@@ -58,11 +65,14 @@ class KinovaDualArmController(Utils):
 
     def _create_arm_connection(self, ip: str, port: int, creds: tuple[str, str]) -> dict:
         """Establish a single robot connection with session management"""
+        
         transport = TCPTransport()
         router = RouterClient(transport, lambda ex: print(f"Connection Error: {ex}"))
         transport.connect(ip, port)
         
         session = SessionManager(router)
+        if sys.platform == 'win32':
+            time.sleep(0.5)  # Windows socket stabilization period
         session_info = Session_pb2.CreateSessionInfo()
         session_info.username, session_info.password = creds
         session_info.session_inactivity_timeout = 60000
@@ -274,6 +284,13 @@ class KinovaDualArmController(Utils):
         if len(joint_speeds) != 6:
             raise ValueError("Requires exactly 6 joint speeds")
         
+        # Before entering control loop
+        if any(abs(v) > 20.0 for v in joint_speeds):
+            raise ValueError("Velocity commands exceed 20 deg/s limit")
+
+        if control_frequency < 1 or control_frequency > 200:
+            raise ValueError("Control frequency must be 1-200Hz")
+
         base_cyclic = self.arms[arm_index]['base_cyclic']
         base = self.arms[arm_index]['base']
         control_config = self.arms[arm_index]['control_config']
@@ -293,6 +310,14 @@ class KinovaDualArmController(Utils):
             for actuator_id in range(1, 7):  # Actuator IDs start at 1
                 actuator_config.SetControlMode(control_mode, actuator_id)
 
+            # Set joint speed limits
+            # joint_speed_limit = ControlConfig_pb2.JointSpeedSoftLimits()
+            # joint_speed_limit = 30.0  # deg/s
+
+            # for actuator_id in range(1, 7):
+            #     self.arms[arm_index]['control_config'].SetJointSpeedSoftLimits(
+            #         joint_speed_limit
+            #     )
 
             # 3. Set servoing mode
             servoing_mode = Base_pb2.LOW_LEVEL_SERVOING
@@ -307,6 +332,8 @@ class KinovaDualArmController(Utils):
                 time.sleep(0.1)
 
             # 5. Prepare cyclic command 
+            feedback = base_cyclic.RefreshFeedback()  # Get current state
+
             command = BaseCyclic_pb2.Command()
             num_actuators = base.GetActuatorCount().count  # Should be 6
             
@@ -314,36 +341,50 @@ class KinovaDualArmController(Utils):
             for i in range(num_actuators):
                 actuator = command.actuators.add()
                 actuator.command_id = i
-                actuator.flags = 1  # Enable servoing control
+                actuator.flags = 0x40  # Enable servoing control
+                actuator.position = feedback.actuators[i].position  # Critical for stability
+
                 actuator.velocity = joint_speeds[i]  # deg/s
             
             # Send commands in real-time loop
             interval = 1.0 / control_frequency
-            start_time = time.time()
-        
-            while time.time() - start_time < duration:
-                # Update frame ID only
-                command.frame_id += 1
-                
-                # Send command (no timestamp needed)
-                base_cyclic.Refresh(command)
-                
-                # Maintain frequency
-                target_time = time.perf_counter() + interval
-                while time.perf_counter() < target_time: pass
+            start_time = time.perf_counter()
+            end_time = start_time + duration  # Calculate absolute end time
+
+            try:
+                while time.perf_counter() < end_time:  # Use perf_counter for better precision
+                    command.frame_id += 1
+                    
+                    # Update positions from current feedback
+                    feedback = base_cyclic.RefreshFeedback()
+                    for i in range(num_actuators):
+                        command.actuators[i].position = feedback.actuators[i].position
+                    
+                    base_cyclic.Refresh(command)
+                    
+                    # Precision sleep
+                    elapsed = time.perf_counter() - start_time
+                    sleep_time = (command.frame_id * interval) - elapsed
+                    if sleep_time > 0:
+                        time.sleep(sleep_time)
+
+            except Exception as e:
+                print(f"Error: {str(e)}")
+
         except Exception as e:
             print(f"Error during joint speed command: {str(e)}")
         finally:
             # Ensure Low Level Servoing
-            servoing_mode = Base_pb2.LOW_LEVEL_SERVOING
-            print("Trying to set servoing mode to LOW_LEVEL_SERVOING")
-            self._ensure_servoing_mode(base, servoing_mode)
+            # servoing_mode = Base_pb2.LOW_LEVEL_SERVOING
+            # print("Trying to set servoing mode to LOW_LEVEL_SERVOING")
+            # self._ensure_servoing_mode(base, servoing_mode)
 
             # Stop all joints
             for actuator in command.actuators:
                 actuator.velocity = 0.0
             base_cyclic.Refresh(command)
-    
+            time.sleep(0.1)  # Allow final command to process
+
             # Before setting SINGLE_LEVEL_SERVOING
             control_mode.control_mode = ActuatorConfig_pb2.POSITION
             for actuator_id in range(1, 7):
@@ -431,7 +472,7 @@ if __name__ == "__main__":
             dual_arm.send_joint_speeds(
                                         arm_index=0,
                                         # joint_speeds=[10.0, 10.0, 10.0, 0.0, 0.0, 0.0],
-                                        joint_speeds = [0.0, 0.0, 0.0, 30.0, 0.0, 0.0],
+                                        joint_speeds = [20.0, -5.0, 0.0, 0.0, 0.0, 0.0],
                                         duration=5.0,
                                         control_frequency=100
                                       )
