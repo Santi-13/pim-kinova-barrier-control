@@ -1,0 +1,1 @@
+ament_cmake_symlink_install_targets("TARGET_FILES" "/home/sanmaster/pim-kinova/build/custom_hardware_plugins/libvelocity_integrator_hardware.so" "TARGETS" "velocity_integrator_hardware" "ARCHIVE_DESTINATION" "lib" "LIBRARY_DESTINATION" "lib" "RUNTIME_DESTINATION" "bin")

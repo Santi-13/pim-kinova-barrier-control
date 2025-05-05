@@ -1,0 +1,129 @@
+[0.011s] Invoking command in '/home/sanmaster/pim-kinova/build/kortex_description': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/opt/ros/humble /usr/bin/cmake --build /home/sanmaster/pim-kinova/build/kortex_description -- -j12 -l12
+[0.031s] -- Found ament_cmake: 1.3.10 (/opt/ros/humble/share/ament_cmake/cmake)
+[0.138s] -- Override CMake install command with custom implementation using symlinks instead of copying resources
+[0.145s] -- Found pluginlib: 5.1.0 (/opt/ros/humble/share/pluginlib/cmake)
+[0.176s] -- Found hardware_interface: 2.43.0 (/opt/ros/humble/share/hardware_interface/cmake)
+[0.192s] -- Found rosidl_generator_c: 3.1.5 (/opt/ros/humble/share/rosidl_generator_c/cmake)
+[0.194s] -- Found rosidl_adapter: 3.1.5 (/opt/ros/humble/share/rosidl_adapter/cmake)
+[0.199s] -- Found rosidl_generator_cpp: 3.1.5 (/opt/ros/humble/share/rosidl_generator_cpp/cmake)
+[0.211s] -- Using all available rosidl_typesupport_c: rosidl_typesupport_fastrtps_c;rosidl_typesupport_introspection_c
+[0.220s] -- Using all available rosidl_typesupport_cpp: rosidl_typesupport_fastrtps_cpp;rosidl_typesupport_introspection_cpp
+[0.387s] -- Found rmw_implementation_cmake: 6.1.2 (/opt/ros/humble/share/rmw_implementation_cmake/cmake)
+[0.388s] -- Found rmw_fastrtps_cpp: 6.2.7 (/opt/ros/humble/share/rmw_fastrtps_cpp/cmake)
+[0.409s] -- Found TinyXML2 via Config file: TinyXML2_DIR-NOTFOUND
+[0.417s] -- Found TinyXML2 via Config file: TinyXML2_DIR-NOTFOUND
+[0.434s] -- Found TinyXML2 via Config file: TinyXML2_DIR-NOTFOUND
+[0.443s] -- Found TinyXML2 via Config file: TinyXML2_DIR-NOTFOUND
+[0.453s] -- Using RMW implementation 'rmw_fastrtps_cpp' as default
+[0.499s] -- Found kdl_parser: 2.6.4 (/opt/ros/humble/share/kdl_parser/cmake)
+[0.501s] -- Found eigen3_cmake_module: 0.1.1 (/opt/ros/humble/share/eigen3_cmake_module/cmake)
+[0.502s] -- Ensuring Eigen3 include directory is part of orocos-kdl CMake target
+[0.504s] -- Found controller_interface: 2.43.0 (/opt/ros/humble/share/controller_interface/cmake)
+[0.510s] -- Found realtime_tools: 2.12.0 (/opt/ros/humble/share/realtime_tools/cmake)
+[0.595s] -- Configuring done
+[0.625s] -- Generating done
+[0.627s] -- Build files have been written to: /home/sanmaster/pim-kinova/build/kortex_description
+[0.661s] [ 50%] [32mBuilding CXX object CMakeFiles/kortex_description.dir/hardware/r6bot_hardware.cpp.o[0m
+[2.012s] [100%] [32m[1mLinking CXX shared library libkortex_description.so[0m
+[2.177s] [100%] Built target kortex_description
+[2.187s] Invoked command in '/home/sanmaster/pim-kinova/build/kortex_description' returned '0': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/opt/ros/humble /usr/bin/cmake --build /home/sanmaster/pim-kinova/build/kortex_description -- -j12 -l12
+[2.220s] Invoking command in '/home/sanmaster/pim-kinova/build/kortex_description': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/opt/ros/humble /usr/bin/cmake --install /home/sanmaster/pim-kinova/build/kortex_description
+[2.226s] -- Install configuration: ""
+[2.226s] -- Execute custom install script
+[2.227s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/arms/gen3/6dof/config/gazebo_initial_joint_positions.yaml
+[2.227s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/arms/gen3/6dof/config/joint_limits.yaml
+[2.227s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/arms/gen3/6dof/config/ros2_controllers.yaml
+[2.227s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/arms/gen3/6dof/config/twist_limits.yaml
+[2.227s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/arms/gen3/6dof/meshes/base_link.STL
+[2.228s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/arms/gen3/6dof/meshes/bicep_link.STL
+[2.228s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/arms/gen3/6dof/meshes/bracelet_no_vision_link.STL
+[2.228s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/arms/gen3/6dof/meshes/bracelet_with_vision_link.STL
+[2.228s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/arms/gen3/6dof/meshes/forearm_link.STL
+[2.228s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/arms/gen3/6dof/meshes/shoulder_link.STL
+[2.228s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/arms/gen3/6dof/meshes/spherical_wrist_1_link.STL
+[2.228s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/arms/gen3/6dof/meshes/spherical_wrist_2_link.STL
+[2.228s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/arms/gen3/6dof/urdf/gen3_macro.xacro
+[2.228s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/arms/gen3/6dof/urdf/gen3_transmission_macro.xacro
+[2.228s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/arms/gen3/6dof/urdf/kortex.ros2_control.xacro
+[2.229s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/arms/gen3/7dof/config/gazebo_initial_joint_positions.yaml
+[2.229s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/arms/gen3/7dof/config/joint_limits.yaml
+[2.229s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/arms/gen3/7dof/config/ros2_controllers.yaml
+[2.229s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/arms/gen3/7dof/config/twist_limits.yaml
+[2.229s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/arms/gen3/7dof/meshes/base_link.STL
+[2.229s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/arms/gen3/7dof/meshes/base_link.dae
+[2.230s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/arms/gen3/7dof/meshes/bracelet_no_vision_link.STL
+[2.230s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/arms/gen3/7dof/meshes/bracelet_no_vision_link.dae
+[2.230s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/arms/gen3/7dof/meshes/bracelet_with_vision_link.STL
+[2.230s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/arms/gen3/7dof/meshes/bracelet_with_vision_link.dae
+[2.230s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/arms/gen3/7dof/meshes/end_effector_link.STL
+[2.230s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/arms/gen3/7dof/meshes/forearm_link.STL
+[2.231s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/arms/gen3/7dof/meshes/forearm_link.dae
+[2.231s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/arms/gen3/7dof/meshes/half_arm_1_link.STL
+[2.231s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/arms/gen3/7dof/meshes/half_arm_1_link.dae
+[2.231s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/arms/gen3/7dof/meshes/half_arm_2_link.STL
+[2.231s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/arms/gen3/7dof/meshes/half_arm_2_link.dae
+[2.232s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/arms/gen3/7dof/meshes/shoulder_link.STL
+[2.232s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/arms/gen3/7dof/meshes/shoulder_link.dae
+[2.232s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/arms/gen3/7dof/meshes/spherical_wrist_1_link.STL
+[2.232s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/arms/gen3/7dof/meshes/spherical_wrist_1_link.dae
+[2.232s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/arms/gen3/7dof/meshes/spherical_wrist_2_link.STL
+[2.233s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/arms/gen3/7dof/meshes/spherical_wrist_2_link.dae
+[2.233s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/arms/gen3/7dof/urdf/gen3_macro.xacro
+[2.233s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/arms/gen3/7dof/urdf/gen3_transmission_macro.xacro
+[2.233s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/arms/gen3/7dof/urdf/kortex.ros2_control.xacro
+[2.233s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/arms/gen3_lite/6dof/config/joint_limits.yaml
+[2.233s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/arms/gen3_lite/6dof/config/ros2_controllers.yaml
+[2.233s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/arms/gen3_lite/6dof/config/twist_limits.yaml
+[2.233s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/arms/gen3_lite/6dof/meshes/arm_link.STL
+[2.233s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/arms/gen3_lite/6dof/meshes/base_link.STL
+[2.233s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/arms/gen3_lite/6dof/meshes/forearm_link.STL
+[2.234s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/arms/gen3_lite/6dof/meshes/lower_wrist_link.STL
+[2.234s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/arms/gen3_lite/6dof/meshes/shoulder_link.STL
+[2.234s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/arms/gen3_lite/6dof/meshes/upper_wrist_link.STL
+[2.234s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/arms/gen3_lite/6dof/urdf/gen3_lite_macro.xacro
+[2.234s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/arms/gen3_lite/6dof/urdf/gen3_lite_transmission_macro.xacro
+[2.234s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/arms/gen3_lite/6dof/urdf/kortex.ros2_control.xacro
+[2.235s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/grippers/gen3_lite_2f/config/joint_limits.yaml
+[2.235s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/grippers/gen3_lite_2f/meshes/gripper_base_link.STL
+[2.235s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/grippers/gen3_lite_2f/meshes/left_finger_dist_link.STL
+[2.235s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/grippers/gen3_lite_2f/meshes/left_finger_prox_link.STL
+[2.235s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/grippers/gen3_lite_2f/meshes/right_finger_dist_link.STL
+[2.235s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/grippers/gen3_lite_2f/meshes/right_finger_prox_link.STL
+[2.235s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/grippers/gen3_lite_2f/urdf/GEN3-LITE-GRIPPER_URDF_SIMPLIFIED_V2.urdf
+[2.235s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/grippers/gen3_lite_2f/urdf/gen3_lite_2f.ros2_control.xacro
+[2.235s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/grippers/gen3_lite_2f/urdf/gen3_lite_2f_macro.xacro
+[2.236s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/grippers/gen3_lite_2f/urdf/gen3_lite_2f_transmission_macro.xacro
+[2.236s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/grippers/robotiq_2f_140/LICENSE
+[2.236s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/grippers/robotiq_2f_140/README.md
+[2.236s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/grippers/robotiq_2f_140/urdf/robotiq_2f_140_macro.xacro
+[2.236s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/grippers/robotiq_2f_85/LICENSE
+[2.236s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/grippers/robotiq_2f_85/README.md
+[2.236s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/grippers/robotiq_2f_85/urdf/robotiq_2f_85_macro.xacro
+[2.236s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/launch/view_robot.launch.py
+[2.237s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/multiple_robots/kortex_dual_robots.xacro
+[2.237s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/robots/gen3.xacro
+[2.237s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/robots/gen3_2f85.urdf
+[2.237s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/robots/gen3_lite.urdf
+[2.237s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/robots/gen3_lite_gen3_lite_2f.xacro
+[2.237s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/robots/gen3_robotiq_2f_140.xacro
+[2.237s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/robots/gen3_robotiq_2f_85.xacro
+[2.238s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/robots/kinova.urdf.xacro
+[2.238s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/robots/kortex_robot.xacro
+[2.238s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/rviz/view_robot.rviz
+[2.238s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/config/initial_positions.yaml
+[2.238s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/ament_index/resource_index/package_run_dependencies/kortex_description
+[2.238s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/ament_index/resource_index/parent_prefix_path/kortex_description
+[2.238s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/environment/ament_prefix_path.sh
+[2.239s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/environment/ament_prefix_path.dsv
+[2.239s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/environment/path.sh
+[2.239s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/environment/path.dsv
+[2.239s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/local_setup.bash
+[2.239s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/local_setup.sh
+[2.239s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/local_setup.zsh
+[2.239s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/local_setup.dsv
+[2.239s] -- Symlinking: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/package.dsv
+[2.248s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/ament_index/resource_index/packages/kortex_description
+[2.248s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/cmake/kortex_descriptionConfig.cmake
+[2.248s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/cmake/kortex_descriptionConfig-version.cmake
+[2.248s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/package.xml
+[2.250s] Invoked command in '/home/sanmaster/pim-kinova/build/kortex_description' returned '0': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/opt/ros/humble /usr/bin/cmake --install /home/sanmaster/pim-kinova/build/kortex_description

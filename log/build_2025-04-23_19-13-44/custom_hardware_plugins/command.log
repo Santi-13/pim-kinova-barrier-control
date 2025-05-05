@@ -1,0 +1,2 @@
+Invoking command in '/home/sanmaster/pim-kinova/build/custom_hardware_plugins': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake --build /home/sanmaster/pim-kinova/build/custom_hardware_plugins -- -j12 -l12
+Invoked command in '/home/sanmaster/pim-kinova/build/custom_hardware_plugins' returned '2': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake --build /home/sanmaster/pim-kinova/build/custom_hardware_plugins -- -j12 -l12

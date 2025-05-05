@@ -1,0 +1,36 @@
+[0.011s] Invoking command in '/home/sanmaster/pim-kinova/build/custom_hardware_plugins': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/opt/ros/humble /usr/bin/cmake --build /home/sanmaster/pim-kinova/build/custom_hardware_plugins -- -j12 -l12
+[0.047s] [35m[1mConsolidate compiler generated dependencies of target custom_hardware_plugins[0m
+[0.061s] [ 50%] [32mBuilding CXX object CMakeFiles/custom_hardware_plugins.dir/src/velocity_integrator_hardware.cpp.o[0m
+[1.412s] [100%] [32m[1mLinking CXX shared library libcustom_hardware_plugins.so[0m
+[1.569s] [100%] Built target custom_hardware_plugins
+[1.581s] Invoked command in '/home/sanmaster/pim-kinova/build/custom_hardware_plugins' returned '0': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/opt/ros/humble /usr/bin/cmake --build /home/sanmaster/pim-kinova/build/custom_hardware_plugins -- -j12 -l12
+[1.613s] Invoking command in '/home/sanmaster/pim-kinova/build/custom_hardware_plugins': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/opt/ros/humble /usr/bin/cmake --install /home/sanmaster/pim-kinova/build/custom_hardware_plugins
+[1.620s] -- Install configuration: ""
+[1.620s] -- Execute custom install script
+[1.621s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/custom_hardware_plugins/share/custom_hardware_plugins//plugins.xml
+[1.621s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/custom_hardware_plugins/share/custom_hardware_plugins/plugins.xml
+[1.621s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/custom_hardware_plugins/share/custom_hardware_plugins/environment/library_path.sh
+[1.621s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/custom_hardware_plugins/share/custom_hardware_plugins/environment/library_path.dsv
+[1.621s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/custom_hardware_plugins/share/ament_index/resource_index/package_run_dependencies/custom_hardware_plugins
+[1.621s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/custom_hardware_plugins/share/ament_index/resource_index/parent_prefix_path/custom_hardware_plugins
+[1.622s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/custom_hardware_plugins/share/custom_hardware_plugins/environment/ament_prefix_path.sh
+[1.622s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/custom_hardware_plugins/share/custom_hardware_plugins/environment/ament_prefix_path.dsv
+[1.622s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/custom_hardware_plugins/share/custom_hardware_plugins/environment/path.sh
+[1.622s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/custom_hardware_plugins/share/custom_hardware_plugins/environment/path.dsv
+[1.622s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/custom_hardware_plugins/share/custom_hardware_plugins/local_setup.bash
+[1.622s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/custom_hardware_plugins/share/custom_hardware_plugins/local_setup.sh
+[1.623s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/custom_hardware_plugins/share/custom_hardware_plugins/local_setup.zsh
+[1.623s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/custom_hardware_plugins/share/custom_hardware_plugins/local_setup.dsv
+[1.623s] -- Symlinking: /home/sanmaster/pim-kinova/install/custom_hardware_plugins/share/custom_hardware_plugins/package.dsv
+[1.631s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/custom_hardware_plugins/share/ament_index/resource_index/packages/custom_hardware_plugins
+[1.632s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/custom_hardware_plugins/share/ament_index/resource_index/custom_hardware_plugins__pluginlib__plugin/custom_hardware_plugins
+[1.632s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/custom_hardware_plugins/share/custom_hardware_plugins/cmake/ament_cmake_export_dependencies-extras.cmake
+[1.632s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/custom_hardware_plugins/share/custom_hardware_plugins/cmake/ament_cmake_export_targets-extras.cmake
+[1.632s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/custom_hardware_plugins/share/custom_hardware_plugins/cmake/custom_hardware_pluginsConfig.cmake
+[1.632s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/custom_hardware_plugins/share/custom_hardware_plugins/cmake/custom_hardware_pluginsConfig-version.cmake
+[1.632s] -- Up-to-date symlink: /home/sanmaster/pim-kinova/install/custom_hardware_plugins/share/custom_hardware_plugins/package.xml
+[1.633s] -- Installing: /home/sanmaster/pim-kinova/install/custom_hardware_plugins/lib/libcustom_hardware_plugins.so
+[1.634s] -- Set runtime path of "/home/sanmaster/pim-kinova/install/custom_hardware_plugins/lib/libcustom_hardware_plugins.so" to ""
+[1.634s] -- Up-to-date: /home/sanmaster/pim-kinova/install/custom_hardware_plugins/share/custom_hardware_plugins/cmake/custom_hardware_pluginsExport.cmake
+[1.634s] -- Up-to-date: /home/sanmaster/pim-kinova/install/custom_hardware_plugins/share/custom_hardware_plugins/cmake/custom_hardware_pluginsExport-noconfig.cmake
+[1.636s] Invoked command in '/home/sanmaster/pim-kinova/build/custom_hardware_plugins' returned '0': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/opt/ros/humble /usr/bin/cmake --install /home/sanmaster/pim-kinova/build/custom_hardware_plugins

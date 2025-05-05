@@ -1,0 +1,1 @@
+/home/sanmaster/pim-kinova/build/kortex_bringup/ament_cmake_core/kortex_bringupConfig.cmake

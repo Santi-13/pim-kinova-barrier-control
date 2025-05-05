@@ -1,0 +1,10 @@
+<library path="custom_hardware_plugins">
+  <class 
+    name="custom_hardware_plugins/VelocityIntegratorHardware"
+    type="custom_hardware_plugins::VelocityIntegratorHardware"
+    base_class_type="hardware_interface::SystemInterface">
+    <description>
+      Custom mock hardware that integrates velocity commands into position
+    </description>
+  </class>
+</library>

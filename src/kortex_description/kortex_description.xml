@@ -1,0 +1,9 @@
+<library path="kortex_description">
+  <class name="kortex_description/RobotSystem"
+         type="kortex_description::RobotSystem"
+         base_class_type="hardware_interface::SystemInterface">
+    <description>
+      Robot hardware plugin for 6 dof robot tutorial.
+    </description>
+  </class>
+</library>

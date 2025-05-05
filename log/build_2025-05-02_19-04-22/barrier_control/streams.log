@@ -1,0 +1,39 @@
+[1.131s] Invoking command in '/home/sanmaster/pim-kinova/src/barrier_control': PYTHONPATH=/home/sanmaster/pim-kinova/build/barrier_control/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/sanmaster/pim-kinova/install/barrier_control/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated setup.py egg_info --egg-base ../../build/barrier_control build --build-base /home/sanmaster/pim-kinova/build/barrier_control/build install --record /home/sanmaster/pim-kinova/build/barrier_control/install.log --single-version-externally-managed install_data
+[1.596s] running egg_info
+[1.597s] writing ../../build/barrier_control/barrier_control.egg-info/PKG-INFO
+[1.597s] writing dependency_links to ../../build/barrier_control/barrier_control.egg-info/dependency_links.txt
+[1.598s] writing entry points to ../../build/barrier_control/barrier_control.egg-info/entry_points.txt
+[1.598s] writing requirements to ../../build/barrier_control/barrier_control.egg-info/requires.txt
+[1.598s] writing top-level names to ../../build/barrier_control/barrier_control.egg-info/top_level.txt
+[1.601s] reading manifest file '../../build/barrier_control/barrier_control.egg-info/SOURCES.txt'
+[1.602s] writing manifest file '../../build/barrier_control/barrier_control.egg-info/SOURCES.txt'
+[1.602s] running build
+[1.603s] running build_py
+[1.603s] creating /home/sanmaster/pim-kinova/build/barrier_control/build
+[1.603s] creating /home/sanmaster/pim-kinova/build/barrier_control/build/lib
+[1.603s] creating /home/sanmaster/pim-kinova/build/barrier_control/build/lib/barrier_control
+[1.603s] copying barrier_control/pose_listener.py -> /home/sanmaster/pim-kinova/build/barrier_control/build/lib/barrier_control
+[1.603s] copying barrier_control/state_listener.py -> /home/sanmaster/pim-kinova/build/barrier_control/build/lib/barrier_control
+[1.604s] copying barrier_control/__init__.py -> /home/sanmaster/pim-kinova/build/barrier_control/build/lib/barrier_control
+[1.604s] copying barrier_control/rigid_body_dynamics_controller.py -> /home/sanmaster/pim-kinova/build/barrier_control/build/lib/barrier_control
+[1.604s] running install
+[1.604s] running install_lib
+[1.605s] creating /home/sanmaster/pim-kinova/install/barrier_control/lib/python3.10/site-packages/barrier_control
+[1.605s] copying /home/sanmaster/pim-kinova/build/barrier_control/build/lib/barrier_control/pose_listener.py -> /home/sanmaster/pim-kinova/install/barrier_control/lib/python3.10/site-packages/barrier_control
+[1.606s] copying /home/sanmaster/pim-kinova/build/barrier_control/build/lib/barrier_control/state_listener.py -> /home/sanmaster/pim-kinova/install/barrier_control/lib/python3.10/site-packages/barrier_control
+[1.606s] copying /home/sanmaster/pim-kinova/build/barrier_control/build/lib/barrier_control/__init__.py -> /home/sanmaster/pim-kinova/install/barrier_control/lib/python3.10/site-packages/barrier_control
+[1.606s] copying /home/sanmaster/pim-kinova/build/barrier_control/build/lib/barrier_control/rigid_body_dynamics_controller.py -> /home/sanmaster/pim-kinova/install/barrier_control/lib/python3.10/site-packages/barrier_control
+[1.607s] byte-compiling /home/sanmaster/pim-kinova/install/barrier_control/lib/python3.10/site-packages/barrier_control/pose_listener.py to pose_listener.cpython-310.pyc
+[1.608s] byte-compiling /home/sanmaster/pim-kinova/install/barrier_control/lib/python3.10/site-packages/barrier_control/state_listener.py to state_listener.cpython-310.pyc
+[1.608s] byte-compiling /home/sanmaster/pim-kinova/install/barrier_control/lib/python3.10/site-packages/barrier_control/__init__.py to __init__.cpython-310.pyc
+[1.609s] byte-compiling /home/sanmaster/pim-kinova/install/barrier_control/lib/python3.10/site-packages/barrier_control/rigid_body_dynamics_controller.py to rigid_body_dynamics_controller.cpython-310.pyc
+[1.609s] running install_data
+[1.610s] running install_egg_info
+[1.612s] removing '/home/sanmaster/pim-kinova/install/barrier_control/lib/python3.10/site-packages/barrier_control-0.0.0-py3.10.egg-info' (and everything under it)
+[1.613s] Copying ../../build/barrier_control/barrier_control.egg-info to /home/sanmaster/pim-kinova/install/barrier_control/lib/python3.10/site-packages/barrier_control-0.0.0-py3.10.egg-info
+[1.614s] running install_scripts
+[1.648s] Installing pose_listener script to /home/sanmaster/pim-kinova/install/barrier_control/lib/barrier_control
+[1.648s] Installing rigid_body_dynamics_controller script to /home/sanmaster/pim-kinova/install/barrier_control/lib/barrier_control
+[1.648s] Installing state_listener script to /home/sanmaster/pim-kinova/install/barrier_control/lib/barrier_control
+[1.649s] writing list of installed files to '/home/sanmaster/pim-kinova/build/barrier_control/install.log'
+[1.679s] Invoked command in '/home/sanmaster/pim-kinova/src/barrier_control' returned '0': PYTHONPATH=/home/sanmaster/pim-kinova/build/barrier_control/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/sanmaster/pim-kinova/install/barrier_control/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated setup.py egg_info --egg-base ../../build/barrier_control build --build-base /home/sanmaster/pim-kinova/build/barrier_control/build install --record /home/sanmaster/pim-kinova/build/barrier_control/install.log --single-version-externally-managed install_data

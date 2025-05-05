@@ -1,0 +1,1 @@
+/home/sanmaster/pim-kinova/src/kortex_description/hardware/r6bot_hardware.cpp
