@@ -1,1 +1,0 @@
-/home/sanmaster/pim-kinova/build/kortex_description/ament_cmake_core/kortex_descriptionConfig-version.cmake

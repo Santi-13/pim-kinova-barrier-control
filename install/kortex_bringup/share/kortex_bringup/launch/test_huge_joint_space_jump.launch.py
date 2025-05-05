@@ -1,1 +1,0 @@
-/home/sanmaster/pim-kinova/src/kortex_bringup/launch/test_huge_joint_space_jump.launch.py

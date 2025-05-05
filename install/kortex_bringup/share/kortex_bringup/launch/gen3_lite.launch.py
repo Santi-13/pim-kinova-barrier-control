@@ -1,1 +1,0 @@
-/home/sanmaster/pim-kinova/src/kortex_bringup/launch/gen3_lite.launch.py

@@ -1,1 +1,0 @@
-/home/sanmaster/pim-kinova/src/barrier_control/setup.py

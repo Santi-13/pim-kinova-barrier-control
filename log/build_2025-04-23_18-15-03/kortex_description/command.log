@@ -1,6 +1,0 @@
-Invoking command in '/home/sanmaster/pim-kinova/build/kortex_description': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake /home/sanmaster/pim-kinova/src/kortex_description -DAMENT_CMAKE_SYMLINK_INSTALL=1 -DCMAKE_INSTALL_PREFIX=/home/sanmaster/pim-kinova/install/kortex_description
-Invoked command in '/home/sanmaster/pim-kinova/build/kortex_description' returned '0': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake /home/sanmaster/pim-kinova/src/kortex_description -DAMENT_CMAKE_SYMLINK_INSTALL=1 -DCMAKE_INSTALL_PREFIX=/home/sanmaster/pim-kinova/install/kortex_description
-Invoking command in '/home/sanmaster/pim-kinova/build/kortex_description': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake --build /home/sanmaster/pim-kinova/build/kortex_description -- -j12 -l12
-Invoked command in '/home/sanmaster/pim-kinova/build/kortex_description' returned '0': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake --build /home/sanmaster/pim-kinova/build/kortex_description -- -j12 -l12
-Invoking command in '/home/sanmaster/pim-kinova/build/kortex_description': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake --install /home/sanmaster/pim-kinova/build/kortex_description
-Invoked command in '/home/sanmaster/pim-kinova/build/kortex_description' returned '0': CMAKE_PREFIX_PATH=/opt/ros/humble /usr/bin/cmake --install /home/sanmaster/pim-kinova/build/kortex_description

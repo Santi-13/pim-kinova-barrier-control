@@ -1,1 +1,0 @@
-/home/sanmaster/pim-kinova/src/kortex_description/launch/view_robot.launch.py

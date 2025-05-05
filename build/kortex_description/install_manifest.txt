@@ -1,3 +1,0 @@
-/home/sanmaster/pim-kinova/install/kortex_description/lib/libkortex_description.so
-/home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/cmake/kortex_descriptionExport.cmake
-/home/sanmaster/pim-kinova/install/kortex_description/share/kortex_description/cmake/kortex_descriptionExport-noconfig.cmake

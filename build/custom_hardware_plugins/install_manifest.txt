@@ -1,3 +1,0 @@
-/home/sanmaster/pim-kinova/install/custom_hardware_plugins/lib/libcustom_hardware_plugins.so
-/home/sanmaster/pim-kinova/install/custom_hardware_plugins/share/custom_hardware_plugins/cmake/custom_hardware_pluginsExport.cmake
-/home/sanmaster/pim-kinova/install/custom_hardware_plugins/share/custom_hardware_plugins/cmake/custom_hardware_pluginsExport-noconfig.cmake
