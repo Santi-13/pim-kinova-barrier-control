@@ -154,7 +154,7 @@ def launch_setup(context, *args, **kwargs):
         arguments=[
             "joint_state_broadcaster",
             "--controller-manager",
-            "/controller_manager",
+            "controller_manager",
         ],
     )
 
@@ -170,19 +170,19 @@ def launch_setup(context, *args, **kwargs):
     robot_traj_controller_spawner = Node(
         package="controller_manager",
         executable="spawner",
-        arguments=[robot_traj_controller, "-c", "/controller_manager"],
+        arguments=[robot_traj_controller, "-c", "controller_manager"],
     )
 
     robot_pos_controller_spawner = Node(
         package="controller_manager",
         executable="spawner",
-        arguments=[robot_pos_controller, "--inactive", "-c", "/controller_manager"],
+        arguments=[robot_pos_controller, "--inactive", "-c", "controller_manager"],
     )
 
     robot_hand_controller_spawner = Node(
         package="controller_manager",
         executable="spawner",
-        arguments=[robot_hand_controller, "-c", "/controller_manager"],
+        arguments=[robot_hand_controller, "-c", "controller_manager"],
         condition=IfCondition(PythonExpression(["'", gripper, "' != ''"])),
     )
 
@@ -190,7 +190,7 @@ def launch_setup(context, *args, **kwargs):
     fault_controller_spawner = Node(
         package="controller_manager",
         executable="spawner",
-        arguments=[fault_controller, "-c", "/controller_manager"],
+        arguments=[fault_controller, "-c", "controller_manager"],
         condition=IfCondition(use_internal_bus_gripper_comm),
     )
 

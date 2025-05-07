@@ -13,9 +13,8 @@ from std_msgs.msg import Float64MultiArray
 from rclpy.duration import Duration
 from sensor_msgs.msg import JointState
 from ament_index_python.packages import get_package_share_directory
+from scipy.spatial.transform import Rotation as R_scipy # For Euler to Quaternion conversion
 import tempfile # For creating temporary files
-
-
 
 class RigidBodyDynamicsController(Node):
     """
@@ -39,7 +38,11 @@ class RigidBodyDynamicsController(Node):
         self.declare_parameter('jacobian_damping', 0.01) # Damping factor for DLS
         self.declare_parameter('max_joint_velocities', [0.87]*6)
         self.declare_parameter('control_frequency', 50.0) # Hz
+        self.declare_parameter('controlled_joint_names', ['joint_1', 'joint_2', 'joint_3', 'joint_4', 'joint_5', 'joint_6']) # List of joint names to control
+        self.declare_parameter('joint_limit_buffer', 0.01) # Buffer for joint limits
         self.declare_parameter('error_tolerance', [0.01, 0.01, 0.01, 0.05, 0.05, 0.05]) # [m, m, m, rad, rad, rad]
+        self.declare_parameter('euler_input_convention', 'xyz') # e.g., 'xyz', 'zyx'. For interpreting incoming target orientation.
+
 
         self.base_frame = self.get_parameter('base_frame').value
         self.tool_frame = self.get_parameter('tool_frame').value
@@ -53,14 +56,21 @@ class RigidBodyDynamicsController(Node):
         self.jacobian_damping = self.get_parameter('jacobian_damping').value
         self.max_joint_velocities_np = np.array(self.get_parameter('max_joint_velocities').value)
         self.control_frequency = self.get_parameter('control_frequency').value
+        self.controlled_joint_names = self.get_parameter('controlled_joint_names').value
+        self.joint_limit_buffer_val = self.get_parameter('joint_limit_buffer').value
         self.error_tolerance_np = np.array(self.get_parameter('error_tolerance').value)
-        
+        self.euler_input_convention = self.get_parameter('euler_input_convention').value.lower()
+
         # --- ---
 
         ### Pose
         self.tf_buffer = tf2_ros.Buffer()
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)    
+        
+        ### Robot Model & Joint Info
         self.robot = None
+        self.joint_position_limits = None # Will be (2, N) numpy array [min_limits; max_limits]
+        self.num_model_joints = 0
 
         ### State
         self.joint_state_subscription = self.create_subscription(
@@ -70,7 +80,6 @@ class RigidBodyDynamicsController(Node):
             10)
         self.current_joint_positions = None
         self.current_joint_velocities = None
-        self.joint_names = None
 
         ### Target Pose
         self.pose_target_subscription = self.create_subscription(
@@ -123,24 +132,97 @@ class RigidBodyDynamicsController(Node):
             return None
 
     def joint_state_callback(self, msg: JointState):        
-        try:
-            # Store the order on first message, ensure it matches the robot model later if needed
-            if self.joint_names is None:
-                 self.joint_names = msg.name
-                 # Optional: Add check here to ensure self.joint_names matches self.robot.joint_names if robot is loaded
+        if not self.controlled_joint_names:
+            self.get_logger().warn("Controlled joint names not set. Cannot process joint states.", throttle_duration_sec=5)
+            return
+        if self.num_model_joints == 0: # Robot model not ready yet
+            self.get_logger().debug("Robot model not loaded, skipping joint state processing.", throttle_duration_sec=5)
+            return
+        if len(self.controlled_joint_names) != self.num_model_joints:
+            self.get_logger().error(f"Mismatch: controlled_joint_names ({len(self.controlled_joint_names)}) vs num_model_joints ({self.num_model_joints}). Cannot reliably process joint states.", throttle_duration_sec=5)
+            return
 
-            ordered_positions = [msg.position[msg.name.index(j_name)] for j_name in self.joint_names]
-            ordered_velocities = np.array([msg.velocity[msg.name.index(j_name)] for j_name in self.joint_names]) # Store as numpy array
-            self.current_joint_positions = ordered_positions
-            self.current_joint_velocities = ordered_velocities
-            # self.get_logger().debug(f'Received joint states: {self.current_joint_positions}\n{self.current_joint_velocities}')
-        except ValueError as e:
+        try:
+            new_positions = np.zeros(self.num_model_joints)
+            new_velocities = np.zeros(self.num_model_joints)
+            
+            all_controlled_joints_found = True
+            for i, name in enumerate(self.controlled_joint_names):
+                try:
+                    idx_in_msg = msg.name.index(name)
+                    new_positions[i] = msg.position[idx_in_msg]
+                    if msg.velocity and len(msg.velocity) > idx_in_msg:
+                        new_velocities[i] = msg.velocity[idx_in_msg]
+                    else:
+                        new_velocities[i] = 0.0 # Default to 0 if not available
+                except ValueError:
+                    self.get_logger().warn(f"Controlled joint '{name}' not found in received JointState message. Available: {msg.name}", throttle_duration_sec=5)
+                    all_controlled_joints_found = False
+                    break # Stop processing this message
+            
+            if all_controlled_joints_found:
+                self.current_joint_positions = new_positions
+                self.current_joint_velocities = new_velocities
+                # self.get_logger().debug(f'Processed joint states for {self.controlled_joint_names}: P={self.current_joint_positions}, V={self.current_joint_velocities}')
+        except Exception as e:
             self.get_logger().error(f"Error processing joint states: {e}")
+            self.current_joint_positions = None # Invalidate on error
+            self.current_joint_velocities = None
 
     def pose_target_callback(self, msg: PoseStamped):
         """Callback to receive and store the desired target pose."""
-        self.get_logger().info(f'Received new target pose: {msg.pose}')
-        self.active_target_pose = msg # Store the new target
+        self.get_logger().info(f'Received new target pose message. Position: {msg.pose.position}, Orientation (interpreted as Euler {self.euler_input_convention}): [x(roll):{msg.pose.orientation.x}, y(pitch):{msg.pose.orientation.y}, z(yaw):{msg.pose.orientation.z}]')
+
+        # Create a new PoseStamped object to store the processed target
+        # The internal active_target_pose will always use quaternions.
+        processed_target_pose = PoseStamped()
+        processed_target_pose.header = msg.header
+        processed_target_pose.pose.position = msg.pose.position
+
+        # Interpret incoming orientation.x, .y, .z as Euler angles
+        roll = msg.pose.orientation.x
+        pitch = msg.pose.orientation.y
+        yaw = msg.pose.orientation.z
+
+        try:
+            if self.euler_input_convention == 'xyz':
+                # Convert Euler angles (roll, pitch, yaw for 'xyz' intrinsic) to quaternion [x, y, z, w]
+                # Half angles
+                hr = roll * 0.5
+                hp = pitch * 0.5
+                hy = yaw * 0.5
+
+                # Sines and cosines of half angles
+                sr, cr = np.sin(hr), np.cos(hr)
+                sp, cp = np.sin(hp), np.cos(hp)
+                sy, cy = np.sin(hy), np.cos(hy)
+
+                # Quaternion components for 'xyz' intrinsic rotation order
+                # q = q_yaw * q_pitch * q_roll (if thinking about coordinate transformations)
+                # or q_final = q_roll_body * q_pitch_body * q_yaw_body
+                # For 'xyz' intrinsic:
+                # w = cr*cp*cy + sr*sp*sy
+                # x = sr*cp*cy - cr*sp*sy
+                # y = cr*sp*cy + sr*cp*sy
+                # z = cr*cp*sy - sr*sp*cy
+                # Note: ROS quaternion is [x, y, z, w]
+                processed_target_pose.pose.orientation.w = cr * cp * cy + sr * sp * sy
+                processed_target_pose.pose.orientation.x = sr * cp * cy - cr * sp * sy
+                processed_target_pose.pose.orientation.y = cr * sp * cy + sr * cp * sy
+                processed_target_pose.pose.orientation.z = cr * cp * sy - sr * sp * cy
+                
+                self.get_logger().info(f"Converted Euler ('xyz') to Quaternion: {processed_target_pose.pose.orientation}")
+                self.active_target_pose = processed_target_pose # Store the new target with converted quaternion
+            elif self.euler_input_convention == 'quat':
+                # If the input is already a quaternion, just copy it
+                processed_target_pose.pose.orientation = msg.pose.orientation
+                self.active_target_pose = processed_target_pose
+            else:
+                self.get_logger().error(f"Euler input convention '{self.euler_input_convention}' is not supported by the current numpy implementation. Only 'xyz' or 'quat' is supported. Target not updated.")
+                return # Do not update target if convention is not supported
+        except ValueError as e:
+             self.get_logger().error(f"Invalid Euler angle convention '{self.euler_input_convention}' or angles: {e}. Target not updated.")
+        
         # Reset pose error calculation (will be recalculated in control loop)
         self.pose_error = np.zeros(6)
 
@@ -159,6 +241,10 @@ class RigidBodyDynamicsController(Node):
         # Convert ROS quaternions (x,y,z,w) to numpy-quaternion objects (w,x,y,z)
         
         q_target_npq = np.quaternion(
+            # current_pose.pose.orientation.w, # Use the passed current_pose
+            # current_pose.pose.orientation.x,
+            # current_pose.pose.orientation.y,
+            # current_pose.pose.orientation.z
             target_pose.pose.orientation.w,
             target_pose.pose.orientation.x,
             target_pose.pose.orientation.y,
@@ -219,6 +305,32 @@ class RigidBodyDynamicsController(Node):
 
             # Load the URDF string into roboticstoolbox
             self.robot = rtb.ERobot.URDF(tmp_file_path)
+
+            if self.robot:
+                self.num_model_joints = self.robot.n # Number of (movable) joints in RTB model
+                self.get_logger().info(f"Successfully loaded robot model with {self.num_model_joints} DoF: {self.robot.name}")
+
+                if not self.controlled_joint_names:
+                    self.get_logger().warn("'controlled_joint_names' parameter is empty. Joint limit checks and state processing might be unreliable.")
+                elif len(self.controlled_joint_names) != self.num_model_joints:
+                    self.get_logger().error(
+                        f"Mismatch: 'controlled_joint_names' parameter has {len(self.controlled_joint_names)} names ({self.controlled_joint_names}), "
+                        f"but the loaded RTB model has {self.num_model_joints} DoF (model joints: {self.robot.links_str(q='qlim')}). " # Added more detail
+                        f"Controller may not function correctly. Check URDF and 'controlled_joint_names'."
+                    )
+                    self.joint_position_limits = None # Disable limits if counts don't match
+                    self.get_logger().warn("Disabling joint position limit checks due to DoF mismatch.")
+                elif self.robot.qlim is not None:
+                    if self.robot.qlim.shape[0] == 2 and self.robot.qlim.shape[1] == self.num_model_joints:
+                        self.joint_position_limits = self.robot.qlim
+                        self.get_logger().info(f"Loaded joint position limits (min/max) for {self.num_model_joints} joints:\n{self.joint_position_limits}")
+                    else:
+                        self.get_logger().error(f"Joint limits shape mismatch. Expected (2, {self.num_model_joints}), got {self.robot.qlim.shape}. Disabling joint limit checks.")
+                        self.joint_position_limits = None
+                else:
+                    self.get_logger().warn("Robot model (qlim) does not define joint limits. Position limits will not be enforced by this controller.")
+                    self.joint_position_limits = None
+                    
             self.get_logger().info(f"Successfully loaded robot model:\n{self.robot}")
 
         except (subprocess.CalledProcessError, FileNotFoundError, Exception) as e:
@@ -236,6 +348,9 @@ class RigidBodyDynamicsController(Node):
             if self.robot is None:
                 self.get_logger().warn("Robot model not loaded yet. Skipping Jacobian calculation.")
                 return None
+            if not self.controlled_joint_names or len(self.controlled_joint_names) != self.num_model_joints :
+                self.get_logger().warn("Controlled joint names misconfigured or mismatch with model DoF. Skipping Jacobian calculation.", throttle_duration_sec=5)
+                return None
             if self.current_joint_positions is None:
                 self.get_logger().warn("Joint positions not yet received. Skipping Jacobian calculation.")
                 return None
@@ -249,11 +364,11 @@ class RigidBodyDynamicsController(Node):
             
 
             # Ensure J_base is 6xN for the 6DOF arm
-            if J_base.shape[0] == 6 and J_base.shape[1] == len(q_np):
+            if J_base.shape[0] == 6 and J_base.shape[1] == self.num_model_joints:
                 self.get_logger().debug(f"Jacobian calculated successfully:\n{J_base}")
                 return J_base
             else:
-                self.get_logger().error(f"Jacobian shape mismatch: {J_base.shape}")
+                self.get_logger().error(f"Jacobian shape mismatch: {J_base.shape}, expected (6, {self.num_model_joints}) for q={q_np}")
                 return None
             
         except Exception as e:
@@ -277,26 +392,52 @@ class RigidBodyDynamicsController(Node):
             # --- Calculate desired end-effector velocity (proportional control) ---
             pose_error_np = pose_error.reshape(-1, 1)
 
-            # --- Calculate joint velocities using Damped Least Squares (DLS) ---
-            # J_dls = jacobian.T @ np.linalg.inv(jacobian @ jacobian.T + self.jacobian_damping**2 * np.eye(6)) # DLS formula
-            # joint_velocities_raw = J_dls @ v_desired
-
             # --- Calculate current end-effector velocity (for derivative term) ---
             q_dot_current = self.current_joint_velocities.reshape(-1, 1)
             v_current = jacobian @ q_dot_current
 
             # --- Combine P and D terms for desired EE velocity ---
-            v_desired_pd = self.kp @ pose_error_np - self.kd @ v_current
+            # v_desired_pd = self.kp @ pose_error_np - self.kd @ v_current
+            v_desired_pd = self.kp @ pose_error_np.reshape(6,1) - self.kd @ v_current.reshape(6,1)
+
+            self.get_logger().debug(f"v_desired: {v_desired_pd.flatten()}")
+
+            # --- Calculate joint velocities using Damped Least Squares (DLS) ---
+            J_dls = jacobian.T @ np.linalg.inv(jacobian @ jacobian.T + self.jacobian_damping**2 * np.eye(6)) # DLS formula
+            joint_velocities_raw = J_dls @ v_desired_pd
 
             # --- Or using standard Pseudo-Inverse ---
-            J_pseudo_inverse = np.linalg.pinv(jacobian)
-            joint_velocities_raw = J_pseudo_inverse @ v_desired_pd # Use PD desired velocity
+            # J_pseudo_inverse = np.linalg.pinv(jacobian)
+            # joint_velocities_raw = J_pseudo_inverse @ v_desired_pd # Use PD desired velocity
 
             # --- Velocity Limiting ---
             joint_velocities_limited = np.clip(joint_velocities_raw.flatten(), -self.max_joint_velocities_np, self.max_joint_velocities_np)
 
-            self.get_logger().debug(f"Raw Vels: {joint_velocities_raw.flatten()}, Limited Vels: {joint_velocities_limited}")
-            return joint_velocities_limited
+            # --- Joint Position Limit Handling ---
+            if self.joint_position_limits is not None and \
+               self.current_joint_positions is not None and \
+               len(joint_velocities_limited) == self.num_model_joints: # Ensure consistent length
+                
+                # Make a copy to modify based on position limits
+                velocities_after_pos_limits = np.copy(joint_velocities_limited) 
+
+                for i in range(self.num_model_joints):
+                    q_i = self.current_joint_positions[i]
+                    v_i = velocities_after_pos_limits[i] 
+
+                    q_min_i = self.joint_position_limits[0, i]
+                    q_max_i = self.joint_position_limits[1, i]
+                    
+                    if q_i <= (q_min_i + self.joint_limit_buffer_val) and v_i < 0:
+                        self.get_logger().debug(f"Joint {self.controlled_joint_names[i]} ({i}) near lower limit (q={q_i:.3f} vs lim={q_min_i:.3f}, buff={self.joint_limit_buffer_val:.3f}) with v={v_i:.3f}. Clamping v to 0.")
+                        velocities_after_pos_limits[i] = 0.0
+                    elif q_i >= (q_max_i - self.joint_limit_buffer_val) and v_i > 0:
+                        self.get_logger().debug(f"Joint {self.controlled_joint_names[i]} ({i}) near upper limit (q={q_i:.3f} vs lim={q_max_i:.3f}, buff={self.joint_limit_buffer_val:.3f}) with v={v_i:.3f}. Clamping v to 0.")
+                        velocities_after_pos_limits[i] = 0.0
+                joint_velocities_limited = velocities_after_pos_limits # Assign back the potentially modified velocities
+            self.get_logger().debug(f"Raw Vels: {joint_velocities_raw.flatten()}, Final Limited Vels: {joint_velocities_limited}")
+            return joint_velocities_limited # Return the final limited velocities
+        
 
         except Exception as e:
             self.get_logger().error(f"Error calculating/limiting joint velocities: {e}")
@@ -306,8 +447,14 @@ class RigidBodyDynamicsController(Node):
         """Publishes the calculated joint velocities."""
         if velocities is None:
             # If calculation failed, publish zeros as a safety measure
-            num_joints = len(self.max_joint_velocities_np)
-            velocities = np.zeros(num_joints)
+        
+            num_publish_joints = 0
+            if self.controlled_joint_names: # Prioritize controlled_joint_names if available
+                num_publish_joints = len(self.controlled_joint_names)
+            elif self.num_model_joints > 0: # Fallback to model DoF
+                num_publish_joints = self.num_model_joints
+            # self.get_logger().warn(f"Velocities are None, publishing zeros for {num_publish_joints} joints.")
+            velocities = np.zeros(num_publish_joints)
 
         msg = Float64MultiArray()
         msg.data = velocities.tolist()
@@ -336,12 +483,16 @@ class RigidBodyDynamicsController(Node):
         self.pose_error = self.calculate_pose_error(current_pose, self.active_target_pose)
         self.get_logger().debug(f'6D Pose error: {self.pose_error}')
 
-        
-
         # Check if target is reached
         if np.all(np.abs(self.pose_error) < self.error_tolerance_np):
-            self.get_logger().info("Target reached within tolerance.")
-            self.publish_velocities(np.zeros(len(self.max_joint_velocities_np))) # Publish zero velocity
+            num_zero_vel_joints = 0
+            if self.controlled_joint_names:
+                num_zero_vel_joints = len(self.controlled_joint_names)
+            elif self.num_model_joints > 0:
+                num_zero_vel_joints = self.num_model_joints
+            self.get_logger().info(f"Target reached within tolerance. Pose error: {self.pose_error}. Publishing zero velocities for {num_zero_vel_joints} joints.")
+            self.publish_velocities(np.zeros(num_zero_vel_joints)) # Publish zero velocity
+
             self.active_target_pose = None # Deactivate target until a new one arrives
             return # Exit the control loop for this cycle
 

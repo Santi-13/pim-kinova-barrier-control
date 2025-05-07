@@ -41,38 +41,40 @@ def generate_launch_description():
                 launch_arguments={
                     'dof': '6',
                     'use_fake_hardware': 'true',
-                    'robot_ip': 'dummy1' # Use unique dummy IPs if needed, though often not critical for fake_hardware
+                    'robot_ip': 'dummy1', # Use unique dummy IPs if needed, though often not critical for fake_hardware
+                    'prefix': f"{robot1_namespace}/" # Pass the prefix argument with a trailing slash
+
                 }.items()
             ),
 
             # Launch Controller for Robot 1
-            Node(
-                package=barrier_control_pkg_name,
-                executable='rigid_body_dynamics_controller',
-                name=robot1_controller_name, # Unique node name
-                output='screen',
-                emulate_tty=True,
-                parameters=[{
-                    # --- Frame names might need prefixing if not handled by bringup ---
-                    'base_frame': 'base_link',
-                    'tool_frame': 'end_effector_link',
-                    # --- Gains, Limits, etc. (can be customized per robot) ---
-                    'kp_gains': [5.0, 5.0, 5.0, 1.0, 1.0, 1.0],
-                    'kd_gains': [0.1, 0.1, 0.1, 0.05, 0.05, 0.05],
-                    'max_joint_velocities': [1.5, 1.5, 1.5, 2.0, 2.0, 2.0],
-                    'control_frequency': 50.0,
-                    'error_tolerance': [0.01, 0.01, 0.01, 0.03, 0.03, 0.03],
-                    # --- Remapped Topics (relative to namespace) ---
-                    'joint_state_topic': robot1_joint_state_topic,
-                    'target_pose_topic': robot1_target_pose_topic,
-                    'velocity_command_topic': robot1_velocity_command_topic,
-                    # --- Robot Description (likely same for both) ---
-                    'robot_description_package': 'kortex_description',
-                    'robot_description_xacro_path': 'robots/gen3.xacro',
-                    'xacro_args': 'dof:=6 use_fake_hardware:=true robot_ip:=dummy1', # Match bringup args
-                }],
-                # arguments=['--ros-args', '--log-level', f'{robot1_controller_name}:=debug'] # Optional debug
-            )
+            # Node(
+            #     package=barrier_control_pkg_name,
+            #     executable='rigid_body_dynamics_controller',
+            #     name=robot1_controller_name, # Unique node name
+            #     output='screen',
+            #     emulate_tty=True,
+            #     parameters=[{
+            #         # --- Frame names might need prefixing if not handled by bringup ---
+            #         'base_frame': f"{robot1_namespace}/base_link", # Add prefix to frame names
+            #         'tool_frame': f"{robot1_namespace}/end_effector_link", # Add prefix to frame names
+            #         # --- Gains, Limits, etc. (can be customized per robot) ---
+            #         'kp_gains': [5.0, 5.0, 5.0, 1.0, 1.0, 1.0],
+            #         'kd_gains': [0.1, 0.1, 0.1, 0.05, 0.05, 0.05],
+            #         'max_joint_velocities': [1.5, 1.5, 1.5, 2.0, 2.0, 2.0],
+            #         'control_frequency': 50.0,
+            #         'error_tolerance': [0.01, 0.01, 0.01, 0.03, 0.03, 0.03],
+            #         # --- Remapped Topics (relative to namespace) ---
+            #         'joint_state_topic': robot1_joint_state_topic,
+            #         'target_pose_topic': robot1_target_pose_topic,
+            #         'velocity_command_topic': robot1_velocity_command_topic,
+            #         # --- Robot Description (likely same for both) ---
+            #         'robot_description_package': 'kortex_description',
+            #         'robot_description_xacro_path': 'robots/gen3.xacro', # Relative path within the package
+            #         'xacro_args': f"dof:=6 use_fake_hardware:=true robot_ip:=dummy1 prefix:={robot1_namespace}/",
+            #     }],
+            #     arguments=['--ros-args', '--log-level', f'{robot1_namespace}.{robot1_controller_name}:=debug'] # Optional debug with namespace
+            # )
         ]
     )
     ld.add_action(robot1_group)
