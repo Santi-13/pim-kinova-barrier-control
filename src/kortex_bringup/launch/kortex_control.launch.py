@@ -14,6 +14,8 @@
 #
 # Authors: Marq Rasmussen, Denis Stogl
 
+import os
+
 from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
@@ -44,6 +46,7 @@ def launch_setup(context, *args, **kwargs):
     description_file = LaunchConfiguration("description_file")
     robot_name = LaunchConfiguration("robot_name")
     prefix = LaunchConfiguration("prefix")
+    namespace = LaunchConfiguration("namespace")
     gripper = LaunchConfiguration("gripper")
     gripper_max_velocity = LaunchConfiguration("gripper_max_velocity")
     gripper_max_force = LaunchConfiguration("gripper_max_force")
@@ -75,6 +78,9 @@ def launch_setup(context, *args, **kwargs):
             " ",
             "name:=",
             robot_name,
+            " ",
+            "namespace:=",
+            namespace,
             " ",
             "arm:=",
             robot_type,
@@ -110,24 +116,34 @@ def launch_setup(context, *args, **kwargs):
     )
     robot_description = {"robot_description": robot_description_content}
 
-    robot_controllers = PathJoinSubstitution(
-        [
-            FindPackageShare(description_package),
-            "arms/" + robot_type.perform(context) + "/" + dof.perform(context) + "dof/config",
-            controllers_file,
-        ]
-    )
+
+    # Evaluate controllers_file to check if it's an absolute path
+    controllers_file_str = controllers_file.perform(context)
+    # Use a consistent variable name for the path to the controllers file
+    robot_controllers_path: str
+    if os.path.isabs(controllers_file_str):
+        robot_controllers_path = controllers_file_str
+    else:
+        # If not absolute, construct path as before.
+        # controllers_file is a LaunchConfiguration, PathJoinSubstitution handles it.
+        robot_controllers_path = PathJoinSubstitution(
+            [
+                FindPackageShare(description_package),
+                "arms/" + robot_type.perform(context) + "/" + dof.perform(context) + "dof/config",
+                controllers_file, # Pass the LaunchConfiguration object
+            ]
+        ).perform(context) # Perform substitution to get string path for Node parameter
 
     rviz_config_file = PathJoinSubstitution(
         [FindPackageShare(description_package), "rviz", "view_robot.rviz"]
     )
-
     control_node = Node(
         package="controller_manager",
         executable="ros2_control_node",
-        parameters=[robot_controllers],
+        # name="controller_manager",  # Explicitly name the node
+        parameters=[robot_controllers_path], # Use the determined path
         remappings=[
-            ("~/robot_description", "/robot_description"),
+            ("~/robot_description", f"{namespace.perform(context)}/robot_description"),
         ],
         output="both",
     )
@@ -298,6 +314,13 @@ def generate_launch_description():
             description="Prefix of the joint names, useful for \
         multi-robot setup. If changed than also joint names in the controllers' configuration \
         have to be updated.",
+        )
+    )
+    declared_arguments.append(
+        DeclareLaunchArgument(
+            "namespace",
+            default_value='""',
+            description="namespace for the robot controller manager",
         )
     )
     declared_arguments.append(

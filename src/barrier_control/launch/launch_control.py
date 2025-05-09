@@ -18,7 +18,8 @@ def generate_launch_description():
             launch_arguments={
                 'dof': '6',
                 'use_fake_hardware': 'true',
-                'robot_ip': 'dummy'
+                'robot_ip': 'dummy',
+                'robot_controller': 'joint_group_velocity_controller' # Specify this controller
             }.items() # Pass arguments as key-value pairs
         ),
         Node(

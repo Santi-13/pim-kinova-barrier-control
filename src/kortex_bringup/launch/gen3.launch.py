@@ -108,6 +108,14 @@ def generate_launch_description():
         DeclareLaunchArgument("launch_rviz", default_value="true", description="Launch RViz?")
     )
 
+    declared_arguments.append(
+        DeclareLaunchArgument(
+            "namespace",
+            default_value="",
+            description="Namespace for the robot.",
+        )
+    )
+
     # Initialize Arguments
     robot_type = LaunchConfiguration("robot_type")
     robot_ip = LaunchConfiguration("robot_ip")
@@ -122,6 +130,7 @@ def generate_launch_description():
     gripper_joint_name = LaunchConfiguration("gripper_joint_name")
     launch_rviz = LaunchConfiguration("launch_rviz")
     controllers_file = LaunchConfiguration("controllers_file")
+    namespace = LaunchConfiguration("namespace")
 
     base_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource([ThisLaunchFileDir(), "/kortex_control.launch.py"]),
@@ -140,6 +149,7 @@ def generate_launch_description():
             "launch_rviz": launch_rviz,
             "controllers_file": controllers_file,
             "description_file": "gen3.xacro",
+            "namespace": namespace,
         }.items(),
     )
 
