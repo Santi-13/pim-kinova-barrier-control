@@ -70,6 +70,13 @@ def generate_launch_description():
     )
     declared_arguments.append(
         DeclareLaunchArgument(
+            "rviz_file",
+            default_value="view_single_robot.rviz",
+            description="Rviz config file.",
+        )
+    )
+    declared_arguments.append(
+        DeclareLaunchArgument(
             "gripper",
             default_value="",
             description="Name of the gripper attached to the arm",
@@ -107,12 +114,49 @@ def generate_launch_description():
     declared_arguments.append(
         DeclareLaunchArgument("launch_rviz", default_value="true", description="Launch RViz?")
     )
-
+    declared_arguments.append(
+        DeclareLaunchArgument(
+            "description_package",
+            default_value="kortex_description", # Match default in kortex_control.launch.py
+            description="Package containing the robot description (URDF/XACRO files).",
+        )
+    )
     declared_arguments.append(
         DeclareLaunchArgument(
             "namespace",
             default_value="",
             description="Namespace for the robot.",
+        )
+    )
+    # Initial Pose Arguments
+    declared_arguments.append(
+        DeclareLaunchArgument(
+            "initial_pose_x", default_value="0.0", description="Initial X position of the robot base."
+        )
+    )
+    declared_arguments.append(
+        DeclareLaunchArgument(
+            "initial_pose_y", default_value="0.0", description="Initial Y position of the robot base."
+        )
+    )
+    declared_arguments.append(
+        DeclareLaunchArgument(
+            "initial_pose_z", default_value="0.0", description="Initial Z position of the robot base."
+        )
+    )
+    declared_arguments.append(
+        DeclareLaunchArgument(
+            "initial_pose_roll", default_value="0.0", description="Initial Roll orientation of the robot base."
+        )
+    )
+    declared_arguments.append(
+        DeclareLaunchArgument(
+            "initial_pose_pitch", default_value="0.0", description="Initial Pitch orientation of the robot base."
+        )
+    )
+    declared_arguments.append(
+        DeclareLaunchArgument(
+            "initial_pose_yaw", default_value="0.0", description="Initial Yaw orientation of the robot base."
         )
     )
 
@@ -130,7 +174,16 @@ def generate_launch_description():
     gripper_joint_name = LaunchConfiguration("gripper_joint_name")
     launch_rviz = LaunchConfiguration("launch_rviz")
     controllers_file = LaunchConfiguration("controllers_file")
+    rviz_file = LaunchConfiguration("rviz_file")
+    description_package = LaunchConfiguration("description_package")
     namespace = LaunchConfiguration("namespace")
+    # Initial Pose Arguments
+    initial_pose_x = LaunchConfiguration("initial_pose_x")
+    initial_pose_y = LaunchConfiguration("initial_pose_y")
+    initial_pose_z = LaunchConfiguration("initial_pose_z")
+    initial_pose_roll = LaunchConfiguration("initial_pose_roll")
+    initial_pose_pitch = LaunchConfiguration("initial_pose_pitch")
+    initial_pose_yaw = LaunchConfiguration("initial_pose_yaw")
 
     base_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource([ThisLaunchFileDir(), "/kortex_control.launch.py"]),
@@ -149,7 +202,15 @@ def generate_launch_description():
             "launch_rviz": launch_rviz,
             "controllers_file": controllers_file,
             "description_file": "gen3.xacro",
+            "rviz_file": rviz_file,
+            "description_package": description_package,
             "namespace": namespace,
+            "initial_pose_x": initial_pose_x,
+            "initial_pose_y": initial_pose_y,
+            "initial_pose_z": initial_pose_z,
+            "initial_pose_roll": initial_pose_roll,
+            "initial_pose_pitch": initial_pose_pitch,
+            "initial_pose_yaw": initial_pose_yaw,
         }.items(),
     )
 

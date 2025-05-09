@@ -1,4 +1,4 @@
-controller_manager:
+/robot2/controller_manager:
   ros__parameters:
     update_rate: 1000  # Hz
 
@@ -20,7 +20,7 @@ controller_manager:
     joint_group_velocity_controller:
       type: velocity_controllers/JointGroupVelocityController
 
-joint_trajectory_controller:
+/robot2/joint_trajectory_controller:
   ros__parameters:
     joints:
       - robot2/joint_1
@@ -41,7 +41,7 @@ joint_trajectory_controller:
       stopped_velocity_tolerance: 0.0
       goal_time: 0.0
 
-twist_controller:
+/robot2/twist_controller:
   ros__parameters:
     joint: tcp
     interface_names:
@@ -52,13 +52,13 @@ twist_controller:
       - twist.angular.y
       - twist.angular.z
 
-robotiq_gripper_controller:
+/robot2/robotiq_gripper_controller:
   ros__parameters:
     default: true
     joint: robotiq_85_left_knuckle_joint
     allow_stalling: true
 
-joint_group_velocity_controller:
+/robot2/joint_group_velocity_controller:
   ros__parameters:
     joints:
       - robot2/joint_1

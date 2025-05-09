@@ -44,6 +44,7 @@ def launch_setup(context, *args, **kwargs):
     controllers_file = LaunchConfiguration("controllers_file")
     description_package = LaunchConfiguration("description_package")
     description_file = LaunchConfiguration("description_file")
+    rviz_file = LaunchConfiguration("rviz_file")
     robot_name = LaunchConfiguration("robot_name")
     prefix = LaunchConfiguration("prefix")
     namespace = LaunchConfiguration("namespace")
@@ -59,6 +60,13 @@ def launch_setup(context, *args, **kwargs):
     launch_rviz = LaunchConfiguration("launch_rviz")
     use_internal_bus_gripper_comm = LaunchConfiguration("use_internal_bus_gripper_comm")
     gripper_joint_name = LaunchConfiguration("gripper_joint_name")
+    # Initial Pose Arguments
+    initial_pose_x = LaunchConfiguration("initial_pose_x")
+    initial_pose_y = LaunchConfiguration("initial_pose_y")
+    initial_pose_z = LaunchConfiguration("initial_pose_z")
+    initial_pose_roll = LaunchConfiguration("initial_pose_roll")
+    initial_pose_pitch = LaunchConfiguration("initial_pose_pitch")
+    initial_pose_yaw = LaunchConfiguration("initial_pose_yaw")
 
     # if we are using fake hardware then we can't use the internal gripper communications of the hardware
     use_fake_hardware_value = use_fake_hardware.perform(context)
@@ -72,6 +80,9 @@ def launch_setup(context, *args, **kwargs):
             PathJoinSubstitution(
                 [FindPackageShare(description_package), "robots", description_file]
             ),
+            " ",
+            "rviz_file:=",
+            rviz_file,
             " ",
             "robot_ip:=",
             robot_ip,
@@ -112,6 +123,25 @@ def launch_setup(context, *args, **kwargs):
             "gripper_joint_name:=",
             gripper_joint_name,
             " ",
+            "initial_pose_x:=",
+            initial_pose_x,
+            " ",
+            "initial_pose_y:=",
+            initial_pose_y,
+            " ",
+            "initial_pose_z:=",
+            initial_pose_z,
+            " ",
+            "initial_pose_roll:=",
+            initial_pose_roll,
+            " ",
+            "initial_pose_pitch:=",
+            initial_pose_pitch,
+            " ",
+            "initial_pose_yaw:=",
+            initial_pose_yaw,
+            " ",
+            
         ]
     )
     robot_description = {"robot_description": robot_description_content}
@@ -128,14 +158,14 @@ def launch_setup(context, *args, **kwargs):
         # controllers_file is a LaunchConfiguration, PathJoinSubstitution handles it.
         robot_controllers_path = PathJoinSubstitution(
             [
-                FindPackageShare(description_package),
+                FindPackageShare(description_package.perform(context)),
                 "arms/" + robot_type.perform(context) + "/" + dof.perform(context) + "dof/config",
                 controllers_file, # Pass the LaunchConfiguration object
             ]
         ).perform(context) # Perform substitution to get string path for Node parameter
 
     rviz_config_file = PathJoinSubstitution(
-        [FindPackageShare(description_package), "rviz", "view_robot.rviz"]
+        [FindPackageShare(description_package.perform(context)), "rviz", rviz_file.perform(context)]
     )
     control_node = Node(
         package="controller_manager",
@@ -157,7 +187,7 @@ def launch_setup(context, *args, **kwargs):
 
     rviz_node = Node(
         package="rviz2",
-        condition=IfCondition(launch_rviz),
+        condition=IfCondition(PythonExpression(["'", launch_rviz.perform(context), "' == 'true'"])),
         executable="rviz2",
         name="rviz2",
         output="log",
@@ -180,7 +210,7 @@ def launch_setup(context, *args, **kwargs):
             target_action=joint_state_broadcaster_spawner,
             on_exit=[rviz_node],
         ),
-        condition=IfCondition(launch_rviz),
+        condition=IfCondition(PythonExpression(["'", launch_rviz.perform(context), "' == 'true'"])),
     )
 
     robot_traj_controller_spawner = Node(
@@ -302,6 +332,13 @@ def generate_launch_description():
     )
     declared_arguments.append(
         DeclareLaunchArgument(
+            "rviz_file",
+            default_value="view_single_robot.rviz",
+            description="Rviz config file.",
+        )
+    )
+    declared_arguments.append(
+        DeclareLaunchArgument(
             "robot_name",
             default_value="arm",
             description="Name of the robot.",
@@ -402,6 +439,37 @@ def generate_launch_description():
             "gripper_joint_name",
             default_value="finger_joint",
             description="Max force for gripper commands",
+        )
+    )
+    # Initial Pose Arguments
+    declared_arguments.append(
+        DeclareLaunchArgument(
+            "initial_pose_x", default_value="0.0", description="Initial X position of the robot base."
+        )
+    )
+    declared_arguments.append(
+        DeclareLaunchArgument(
+            "initial_pose_y", default_value="0.0", description="Initial Y position of the robot base."
+        )
+    )
+    declared_arguments.append(
+        DeclareLaunchArgument(
+            "initial_pose_z", default_value="0.0", description="Initial Z position of the robot base."
+        )
+    )
+    declared_arguments.append(
+        DeclareLaunchArgument(
+            "initial_pose_roll", default_value="0.0", description="Initial Roll orientation of the robot base."
+        )
+    )
+    declared_arguments.append(
+        DeclareLaunchArgument(
+            "initial_pose_pitch", default_value="0.0", description="Initial Pitch orientation of the robot base."
+        )
+    )
+    declared_arguments.append(
+        DeclareLaunchArgument(
+            "initial_pose_yaw", default_value="0.0", description="Initial Yaw orientation of the robot base."
         )
     )
     return LaunchDescription(declared_arguments + [OpaqueFunction(function=launch_setup)])
