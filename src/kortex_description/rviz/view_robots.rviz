@@ -5,6 +5,7 @@ Panels:
     Property Tree Widget:
       Expanded:
         - /Global Options1
+        - /Grid1
         - /RobotModel1
         - /RobotModel2
         - /RobotModel2/Description Topic1
@@ -27,7 +28,7 @@ Visualization Manager:
   Class: ""
   Displays:
     - Alpha: 0.5
-      Cell Size: 1
+      Cell Size: 0.5
       Class: rviz_default_plugins/Grid
       Color: 160; 160; 164
       Enabled: true
@@ -41,7 +42,7 @@ Visualization Manager:
         Y: 0
         Z: 0
       Plane: XY
-      Plane Cell Count: 10
+      Plane Cell Count: 20
       Reference Frame: <Fixed Frame>
       Value: true
     - Alpha: 1
@@ -236,25 +237,25 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 2.2834885120391846
+      Distance: 3.208137035369873
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: -0.4017663896083832
-        Y: -0.08240868896245956
-        Z: 0.5916804075241089
+        X: 0.07368814945220947
+        Y: -0.07253113389015198
+        Z: 0.20048126578330994
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.14539846777915955
+      Pitch: 0.320398211479187
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 0.20536769926548004
+      Yaw: 5.633546352386475
     Saved: ~
 Window Geometry:
   Displays:
