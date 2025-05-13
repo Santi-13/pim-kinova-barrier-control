@@ -159,6 +159,17 @@ def generate_launch_description():
             "initial_pose_yaw", default_value="0.0", description="Initial Yaw orientation of the robot base."
         )
     )
+    declared_arguments.append(
+        DeclareLaunchArgument(
+            "sim_gazebo", default_value="false", description="Use Gazebo simulation."
+        )
+    )
+    declared_arguments.append(
+        DeclareLaunchArgument(
+            "launch_gazebo_server_client", default_value="false", description="Launch Gazebo server and client."
+        )
+    )
+
 
     # Initialize Arguments
     robot_type = LaunchConfiguration("robot_type")
@@ -177,6 +188,8 @@ def generate_launch_description():
     rviz_file = LaunchConfiguration("rviz_file")
     description_package = LaunchConfiguration("description_package")
     namespace = LaunchConfiguration("namespace")
+    sim_gazebo = LaunchConfiguration("sim_gazebo")
+    launch_gazebo_server_client = LaunchConfiguration("launch_gazebo_server_client")
     # Initial Pose Arguments
     initial_pose_x = LaunchConfiguration("initial_pose_x")
     initial_pose_y = LaunchConfiguration("initial_pose_y")
@@ -211,6 +224,8 @@ def generate_launch_description():
             "initial_pose_roll": initial_pose_roll,
             "initial_pose_pitch": initial_pose_pitch,
             "initial_pose_yaw": initial_pose_yaw,
+            "sim_gazebo": sim_gazebo,
+            "launch_gazebo_server_client": launch_gazebo_server_client,
         }.items(),
     )
 

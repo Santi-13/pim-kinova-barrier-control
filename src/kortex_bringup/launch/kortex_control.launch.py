@@ -21,6 +21,7 @@ from launch.actions import (
     DeclareLaunchArgument,
     OpaqueFunction,
     RegisterEventHandler,
+    ExecuteProcess
 )
 from launch.event_handlers import OnProcessExit
 from launch.conditions import IfCondition
@@ -60,6 +61,8 @@ def launch_setup(context, *args, **kwargs):
     launch_rviz = LaunchConfiguration("launch_rviz")
     use_internal_bus_gripper_comm = LaunchConfiguration("use_internal_bus_gripper_comm")
     gripper_joint_name = LaunchConfiguration("gripper_joint_name")
+    sim_gazebo = LaunchConfiguration("sim_gazebo")
+    launch_gazebo_server_client = LaunchConfiguration("launch_gazebo_server_client")
     # Initial Pose Arguments
     initial_pose_x = LaunchConfiguration("initial_pose_x")
     initial_pose_y = LaunchConfiguration("initial_pose_y")
@@ -141,7 +144,9 @@ def launch_setup(context, *args, **kwargs):
             "initial_pose_yaw:=",
             initial_pose_yaw,
             " ",
-            
+            "sim_gazebo:=",
+            sim_gazebo,
+            " ",
         ]
     )
     robot_description = {"robot_description": robot_description_content}
@@ -204,6 +209,30 @@ def launch_setup(context, *args, **kwargs):
         ],
     )
 
+    # Gazebo nodes
+    gzserver = ExecuteProcess(
+        cmd=["gzserver", "-s", "libgazebo_ros_init.so", "-s", "libgazebo_ros_factory.so", ""],
+        output="screen",
+        condition=IfCondition(PythonExpression(["'", sim_gazebo.perform(context), "' == 'true' and '", launch_gazebo_server_client.perform(context), "' == 'true'"])),
+    )
+
+    # Gazebo client
+    gzclient = ExecuteProcess(
+        cmd=["gzclient"],
+        output="screen",
+        condition=IfCondition(PythonExpression(["'", sim_gazebo.perform(context), "' == 'true' and '", launch_gazebo_server_client.perform(context), "' == 'true'"])),
+    )
+
+    # Spawn robot
+    gazebo_spawn_robot = Node(
+        package="gazebo_ros",
+        executable="spawn_entity.py",
+        name="spawn_robot",
+        arguments=["-entity", robot_name, "-topic", f"{namespace.perform(context)}/robot_description"],
+        output="screen",
+        condition=IfCondition(PythonExpression(["'", sim_gazebo.perform(context), "' == 'true'"])),
+    )
+
     # Delay rviz start after `joint_state_broadcaster`
     delay_rviz_after_joint_state_broadcaster_spawner = RegisterEventHandler(
         event_handler=OnProcessExit(
@@ -249,6 +278,11 @@ def launch_setup(context, *args, **kwargs):
         robot_pos_controller_spawner,
         fault_controller_spawner,
     ]
+
+    if sim_gazebo.perform(context) == "true" and launch_gazebo_server_client.perform(context) == "true":
+        nodes_to_start.extend([gzserver, gzclient])
+    if sim_gazebo.perform(context) == "true":
+        nodes_to_start.append(gazebo_spawn_robot)
     start_robot_hand_controller = gripper.perform(context) != ""
     # Conditionally add robot_hand_controller_spawner
     if start_robot_hand_controller:
@@ -472,4 +506,17 @@ def generate_launch_description():
             "initial_pose_yaw", default_value="0.0", description="Initial Yaw orientation of the robot base."
         )
     )
+    declared_arguments.append(
+        DeclareLaunchArgument(
+            "sim_gazebo", default_value="false", description="Use Gazebo simulation."
+        )
+    )
+    declared_arguments.append(
+        DeclareLaunchArgument(
+            "launch_gazebo_server_client",
+            default_value="true",
+            description="Launch Gazebo server and client. Set to false if Gazebo is launched externally.",
+        )
+    )
+
     return LaunchDescription(declared_arguments + [OpaqueFunction(function=launch_setup)])

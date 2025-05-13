@@ -1,6 +1,6 @@
 from launch import LaunchDescription
-from launch.actions import GroupAction, IncludeLaunchDescription, DeclareLaunchArgument
-from launch.substitutions import LaunchConfiguration
+from launch.actions import GroupAction, IncludeLaunchDescription, DeclareLaunchArgument, OpaqueFunction, ExecuteProcess, LogInfo
+from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch_ros.actions import Node, PushRosNamespace
 from ament_index_python.packages import get_package_share_directory
@@ -93,10 +93,23 @@ def generate_launch_description():
             "initial_pose_yaw_robot2", default_value="0.0", description="Initial Yaw for Robot 2"
         )
     )
+    declared_arguments.append(
+        DeclareLaunchArgument(
+            "use_fake_hardware", default_value="true", description="Use fake hardware for both robots."
+        )
+    )
+    declared_arguments.append(
+        DeclareLaunchArgument(
+            "sim_gazebo", default_value="false", description="Use Gazebo simulation."
+        )
+    )
+
     # --- Common Paths ---
     kortex_bringup_pkg_path = get_package_share_directory('kortex_bringup')
     gen3_launch_file = os.path.join(kortex_bringup_pkg_path, 'launch', 'gen3.launch.py')
     barrier_control_pkg_name = 'barrier_control'
+    use_fake_hardware = LaunchConfiguration('use_fake_hardware')
+    sim_gazebo = LaunchConfiguration('sim_gazebo')
 
     # --- Robot 1 Configuration ---
     robot1_namespace = 'robot1'
@@ -105,7 +118,7 @@ def generate_launch_description():
     robot1_target_pose_topic = 'target_pose' # Relative topic name within namespace
     robot1_joint_state_topic = 'joint_states' # Relative topic name within namespace
     robot1_velocity_command_topic = 'joint_group_velocity_controller/commands' # Relative topic name
-
+    
     # --- Robot 2 Configuration ---
     robot2_namespace = 'robot2'
     robot2_controller_name = 'robot2_controller'
@@ -117,7 +130,7 @@ def generate_launch_description():
     # --- Create Launch Description ---
     ld = LaunchDescription(declared_arguments)
 
-    # --- Robot 1 Group ---
+    # --- Robot 1 Group ---    
     robot1_group = GroupAction(
         actions=[
             # Push the namespace for all nodes/includes within this group
@@ -128,7 +141,8 @@ def generate_launch_description():
                 PythonLaunchDescriptionSource(gen3_launch_file),
                 launch_arguments={
                     'dof': '6',
-                    'use_fake_hardware': 'true',
+                    'use_fake_hardware': use_fake_hardware,
+                    'sim_gazebo': sim_gazebo,
                     'robot_ip': 'dummy1', # Use unique dummy IPs if needed, though often not critical for fake_hardware
                     'prefix': f"{robot1_namespace}/", # Pass the prefix argument with a trailing slash
                     'namespace': f"/{robot1_namespace}", # Namespace for the robot
@@ -144,7 +158,7 @@ def generate_launch_description():
                     'rviz_file': 'view_robots.rviz', # Specify the RViz file for Robots
                     'description_package': LaunchConfiguration("description_package_robot1"),
                     'launch_rviz': LaunchConfiguration("launch_rviz_robot1"), # Pass the declared argument
-
+                    'launch_gazebo_server_client': PythonExpression(["'false' if '", sim_gazebo, "' == 'true' else 'true'"]),
                 }.items()
             ),
             Node(
@@ -172,7 +186,7 @@ def generate_launch_description():
                     # --- Control Settings & Topic Names ---
                     'joint_limit_buffer': 0.01, # Small buffer (rad or m) for joint position limits
                     'control_frequency': 20.0, # Control loop frequency in Hz
-                    'error_tolerance': [0.05] * 3 + [0.1]*3, # Pos [m], Orient [rad]
+                    'error_tolerance': [0.02] * 3 + [0.1]*3, # Pos [m], Orient [rad]
                     'joint_state_topic': robot1_joint_state_topic,
                     'target_pose_topic': robot1_target_pose_topic,
                     'velocity_command_topic': robot1_velocity_command_topic,
@@ -180,7 +194,16 @@ def generate_launch_description():
                     'robot_description_package': 'kortex_description', # Your robot description package
                     'robot_description_xacro_path': 'robots/gen3.xacro', # Relative path within the package
                     # Arguments passed to xacro - adjust as needed for your URDF/XACRO
-                    'xacro_args': f"dof:=6 use_fake_hardware:=true robot_ip:=dummy1 prefix:={robot1_namespace}/ initial_pose_y:=-0.5", # Also pass to controller if it loads its own model
+                    'xacro_args': PythonExpression([
+                        "'dof:=6 use_fake_hardware:=",
+                        use_fake_hardware,
+                        " robot_ip:=dummy1 prefix:=",
+                        robot1_namespace, # This is the Python string 'robot1'
+                        "/ initial_pose_y:=-0.5 sim_gazebo:=",
+                        sim_gazebo, "'" # Make sure spacing is correct for the final xacro string
+                    ]),
+                    
+        
                 }],
                 arguments=['--ros-args', '--log-level', 'rigid_body_dynamics_controller:=debug']
             )
@@ -199,7 +222,8 @@ def generate_launch_description():
                 PythonLaunchDescriptionSource(gen3_launch_file),
                 launch_arguments={
                     'dof': '6',
-                    'use_fake_hardware': 'true',
+                    'use_fake_hardware': use_fake_hardware,
+                    'sim_gazebo': sim_gazebo,
                     'robot_ip': 'dummy2', # Use unique dummy IPs if needed, though often not critical for fake_hardware
                     'prefix': f"{robot2_namespace}/", # Pass the prefix argument with a trailing slash
                     'namespace': f"/{robot2_namespace}", # Namespace for the robot
@@ -216,7 +240,7 @@ def generate_launch_description():
                     
                     'description_package': LaunchConfiguration("description_package_robot2"),
                     'launch_rviz': LaunchConfiguration("launch_rviz_robot2"), # Pass the declared argument
-
+                    'launch_gazebo_server_client': PythonExpression(["'false' if '", sim_gazebo, "' == 'true' else 'true'"]),
                 }.items()
             ),
             Node(
@@ -244,7 +268,7 @@ def generate_launch_description():
                     # --- Control Settings & Topic Names ---
                     'joint_limit_buffer': 0.01, # Small buffer (rad or m) for joint position limits
                     'control_frequency': 20.0, # Control loop frequency in Hz
-                    'error_tolerance': [0.05] * 3 + [0.1]*3, # Pos [m], Orient [rad]
+                    'error_tolerance': [0.02] * 3 + [0.1]*3, # Pos [m], Orient [rad]
                     'joint_state_topic': robot2_joint_state_topic,
                     'target_pose_topic': robot2_target_pose_topic,
                     'velocity_command_topic': robot2_velocity_command_topic,
@@ -252,7 +276,15 @@ def generate_launch_description():
                     'robot_description_package': 'kortex_description', # Your robot description package
                     'robot_description_xacro_path': 'robots/gen3.xacro', # Relative path within the package
                     # Arguments passed to xacro - adjust as needed for your URDF/XACRO
-                    'xacro_args': f"dof:=6 use_fake_hardware:=true robot_ip:=dummy2 prefix:={robot2_namespace}/ initial_pose_y:=0.5", # Also pass to controller if it loads its own model
+
+                    'xacro_args': PythonExpression([
+                        "'dof:=6 use_fake_hardware:=",
+                        use_fake_hardware,
+                        " robot_ip:=dummy2 prefix:=",
+                        robot2_namespace, # This is the Python string 'robot2'
+                        "/ initial_pose_y:=-0.5 sim_gazebo:=",
+                        sim_gazebo, "'" # Make sure spacing is correct for the final xacro string
+                    ]),
                 }],
                 arguments=['--ros-args', '--log-level', 'rigid_body_dynamics_controller:=debug']
             )
@@ -260,4 +292,24 @@ def generate_launch_description():
     )
     ld.add_action(robot2_group)
 
+    # --- Gazebo Simulation ---
+    # This OpaqueFunction allows us to conditionally add Gazebo-related nodes
+    # based on the runtime value of sim_gazebo
+    def include_gazebo_if_enabled(context):
+        if LaunchConfiguration("sim_gazebo").perform(context) == "true":
+            LogInfo(msg="sim_gazebo is true, including Gazebo using gazebo_ros/launch/gazebo.launch.py.")
+            
+            gazebo_ros_pkg_path = get_package_share_directory('gazebo_ros')
+            gazebo_launch_file = os.path.join(gazebo_ros_pkg_path, 'launch', 'gazebo.launch.py')
+
+            gazebo_include = IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(gazebo_launch_file),
+                # You can add launch arguments for gazebo.launch.py here if needed, e.g.:
+                launch_arguments={'verbose': 'true'}.items(),
+            )   
+            return [gazebo_include]
+        LogInfo(msg="sim_gazebo is false, not launching Gazebo server and client from dual_gen3_control_launch.")
+        return []
+
+    ld.add_action(OpaqueFunction(function=include_gazebo_if_enabled))
     return ld

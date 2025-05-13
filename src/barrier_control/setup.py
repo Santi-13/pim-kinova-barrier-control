@@ -11,6 +11,8 @@ setup(
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
         ('share/' + package_name + '/launch', ['launch/launch_control.py', 'launch/dual_gen3_control_launch.py']),
+        ('share/' + package_name + '/worlds', ['worlds/my_world.world']),
+
 
     ],
     install_requires=['setuptools'],

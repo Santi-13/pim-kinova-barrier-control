@@ -21,7 +21,7 @@
     <xacro:arg name="sim_ignition" default="false" />
     <xacro:arg name="sim_isaac" default="false" />
     <xacro:arg name="prefix" default="" />
-    <xacro:arg name="use_fake_hardware" default="false" />
+    <xacro:arg name="use_fake_hardware" default="true" />
     <xacro:arg name="fake_sensor_commands" default="false" />
     <xacro:arg name="use_internal_bus_gripper_comm" default="false" />
     <xacro:arg name="use_external_cable" default="false" />
