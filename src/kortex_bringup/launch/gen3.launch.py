@@ -169,6 +169,20 @@ def generate_launch_description():
             "launch_gazebo_server_client", default_value="false", description="Launch Gazebo server and client."
         )
     )
+    declared_arguments.append(
+        DeclareLaunchArgument(
+            "sim_ignition",
+            default_value="false", # Or "true" if you want it to be the default
+            description="Use Ignition Gazebo (Fortress) simulation.",
+        )
+    )
+    declared_arguments.append(
+        DeclareLaunchArgument(
+            "use_sim_time",
+            default_value="false",
+            description="Use simulation time.",
+        )
+    )
 
 
     # Initialize Arguments
@@ -190,6 +204,8 @@ def generate_launch_description():
     namespace = LaunchConfiguration("namespace")
     sim_gazebo = LaunchConfiguration("sim_gazebo")
     launch_gazebo_server_client = LaunchConfiguration("launch_gazebo_server_client")
+    sim_ignition = LaunchConfiguration("sim_ignition")
+    use_sim_time = LaunchConfiguration("use_sim_time")
     # Initial Pose Arguments
     initial_pose_x = LaunchConfiguration("initial_pose_x")
     initial_pose_y = LaunchConfiguration("initial_pose_y")
@@ -225,7 +241,9 @@ def generate_launch_description():
             "initial_pose_pitch": initial_pose_pitch,
             "initial_pose_yaw": initial_pose_yaw,
             "sim_gazebo": sim_gazebo,
+            "sim_ignition": sim_ignition, 
             "launch_gazebo_server_client": launch_gazebo_server_client,
+            "use_sim_time": use_sim_time,
         }.items(),
     )
 

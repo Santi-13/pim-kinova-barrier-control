@@ -103,6 +103,20 @@ def generate_launch_description():
             "sim_gazebo", default_value="false", description="Use Gazebo simulation."
         )
     )
+    declared_arguments.append(
+        DeclareLaunchArgument(
+            "sim_ignition",
+            default_value="true", # Set to true if this is your new default
+            description="Use Ignition Gazebo (Fortress) simulation for both robots."
+        )
+    )
+    declared_arguments.append(
+        DeclareLaunchArgument(
+            "use_sim_time",
+            default_value="false",
+            description="Use simulation time.",
+        )
+    )
 
     # --- Common Paths ---
     kortex_bringup_pkg_path = get_package_share_directory('kortex_bringup')
@@ -110,6 +124,8 @@ def generate_launch_description():
     barrier_control_pkg_name = 'barrier_control'
     use_fake_hardware = LaunchConfiguration('use_fake_hardware')
     sim_gazebo = LaunchConfiguration('sim_gazebo')
+    sim_ignition = LaunchConfiguration('sim_ignition')
+    use_sim_time = LaunchConfiguration('use_sim_time')
 
     # --- Robot 1 Configuration ---
     robot1_namespace = 'robot1'
@@ -143,6 +159,8 @@ def generate_launch_description():
                     'dof': '6',
                     'use_fake_hardware': use_fake_hardware,
                     'sim_gazebo': sim_gazebo,
+                    'sim_ignition': sim_ignition,
+                    'use_sim_time': use_sim_time,
                     'robot_ip': 'dummy1', # Use unique dummy IPs if needed, though often not critical for fake_hardware
                     'prefix': f"{robot1_namespace}/", # Pass the prefix argument with a trailing slash
                     'namespace': f"/{robot1_namespace}", # Namespace for the robot
@@ -200,7 +218,8 @@ def generate_launch_description():
                         " robot_ip:=dummy1 prefix:=",
                         robot1_namespace, # This is the Python string 'robot1'
                         "/ initial_pose_y:=-0.5 sim_gazebo:=",
-                        sim_gazebo, "'" # Make sure spacing is correct for the final xacro string
+                        sim_gazebo, " sim_ignition:=",
+                        sim_ignition, "'" # Make sure spacing is correct for the final xacro string
                     ]),
                     
         
@@ -223,7 +242,9 @@ def generate_launch_description():
                 launch_arguments={
                     'dof': '6',
                     'use_fake_hardware': use_fake_hardware,
-                    'sim_gazebo': sim_gazebo,
+                    'sim_gazebo': 'false',
+                    'sim_ignition': 'false',
+                    'use_sim_time': 'false',
                     'robot_ip': 'dummy2', # Use unique dummy IPs if needed, though often not critical for fake_hardware
                     'prefix': f"{robot2_namespace}/", # Pass the prefix argument with a trailing slash
                     'namespace': f"/{robot2_namespace}", # Namespace for the robot
@@ -283,7 +304,8 @@ def generate_launch_description():
                         " robot_ip:=dummy2 prefix:=",
                         robot2_namespace, # This is the Python string 'robot2'
                         "/ initial_pose_y:=-0.5 sim_gazebo:=",
-                        sim_gazebo, "'" # Make sure spacing is correct for the final xacro string
+                        sim_gazebo, " sim_ignition:=",
+                        sim_ignition, "'" # Make sure spacing is correct for the final xacro string
                     ]),
                 }],
                 arguments=['--ros-args', '--log-level', 'rigid_body_dynamics_controller:=debug']
@@ -295,21 +317,35 @@ def generate_launch_description():
     # --- Gazebo Simulation ---
     # This OpaqueFunction allows us to conditionally add Gazebo-related nodes
     # based on the runtime value of sim_gazebo
-    def include_gazebo_if_enabled(context):
-        if LaunchConfiguration("sim_gazebo").perform(context) == "true":
-            LogInfo(msg="sim_gazebo is true, including Gazebo using gazebo_ros/launch/gazebo.launch.py.")
-            
+    def include_simulation_environment(context):
+        nodes = []
+        sim_ignition_str = sim_ignition.perform(context)
+        sim_gazebo_str = sim_gazebo.perform(context)
+
+        if sim_ignition_str == "true":
+            LogInfo(msg="sim_ignition is true, launching Ignition Gazebo (Fortress).")
+            pkg_ros_gz_sim = get_package_share_directory('ros_gz_sim')
+            ignition_launch_file = os.path.join(pkg_ros_gz_sim, 'launch', 'gz_sim.launch.py')
+            # Use -r for GUI, -s for server-only. Add your world file.
+            # Example: 'gz_args': '-r -v 4 your_world.sdf' or 'gz_args': '-r -v 4 empty.sdf'
+            gazebo_sim_launch = IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(ignition_launch_file),
+                launch_arguments={'gz_args': '-r -v 4 empty.sdf'}.items()
+            )
+            nodes.append(gazebo_sim_launch)
+
+        elif sim_gazebo_str == "true":
+            LogInfo(msg="sim_gazebo is true, launching Gazebo Classic.")
             gazebo_ros_pkg_path = get_package_share_directory('gazebo_ros')
-            gazebo_launch_file = os.path.join(gazebo_ros_pkg_path, 'launch', 'gazebo.launch.py')
+            gazebo_classic_launch_file = os.path.join(gazebo_ros_pkg_path, 'launch', 'gazebo.launch.py')
+            gazebo_classic_launch = IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(gazebo_classic_launch_file),
+                launch_arguments={'verbose': 'true'}.items(), # Example args for Gazebo Classic
+            )
+            nodes.append(gazebo_classic_launch)
+        else:
+            LogInfo(msg="Neither sim_ignition nor sim_gazebo is true. No simulation environment launched by dual_gen3_control_launch.")
+        return nodes
 
-            gazebo_include = IncludeLaunchDescription(
-                PythonLaunchDescriptionSource(gazebo_launch_file),
-                # You can add launch arguments for gazebo.launch.py here if needed, e.g.:
-                launch_arguments={'verbose': 'true'}.items(),
-            )   
-            return [gazebo_include]
-        LogInfo(msg="sim_gazebo is false, not launching Gazebo server and client from dual_gen3_control_launch.")
-        return []
-
-    ld.add_action(OpaqueFunction(function=include_gazebo_if_enabled))
+    ld.add_action(OpaqueFunction(function=include_simulation_environment))
     return ld

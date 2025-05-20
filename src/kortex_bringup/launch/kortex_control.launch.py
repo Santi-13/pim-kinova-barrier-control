@@ -18,9 +18,11 @@ import os
 
 from launch import LaunchDescription
 from launch.actions import (
+    AppendEnvironmentVariable,
     DeclareLaunchArgument,
     OpaqueFunction,
     RegisterEventHandler,
+    IncludeLaunchDescription,
     ExecuteProcess
 )
 from launch.event_handlers import OnProcessExit
@@ -32,15 +34,19 @@ from launch.substitutions import (
     PathJoinSubstitution,
     PythonExpression,
 )
+from ament_index_python.packages import get_package_share_directory, get_package_prefix
+from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 
-
 def launch_setup(context, *args, **kwargs):
     # Initialize Arguments
+    sim_gazebo = LaunchConfiguration("sim_gazebo")
+    sim_ignition = LaunchConfiguration("sim_ignition")
     robot_type = LaunchConfiguration("robot_type")
     robot_ip = LaunchConfiguration("robot_ip")
     dof = LaunchConfiguration("dof")
+    vision = LaunchConfiguration("vision")
     # General arguments
     controllers_file = LaunchConfiguration("controllers_file")
     description_package = LaunchConfiguration("description_package")
@@ -61,8 +67,8 @@ def launch_setup(context, *args, **kwargs):
     launch_rviz = LaunchConfiguration("launch_rviz")
     use_internal_bus_gripper_comm = LaunchConfiguration("use_internal_bus_gripper_comm")
     gripper_joint_name = LaunchConfiguration("gripper_joint_name")
-    sim_gazebo = LaunchConfiguration("sim_gazebo")
-    launch_gazebo_server_client = LaunchConfiguration("launch_gazebo_server_client")
+    use_sim_time = LaunchConfiguration("use_sim_time")
+    
     # Initial Pose Arguments
     initial_pose_x = LaunchConfiguration("initial_pose_x")
     initial_pose_y = LaunchConfiguration("initial_pose_y")
@@ -75,6 +81,26 @@ def launch_setup(context, *args, **kwargs):
     use_fake_hardware_value = use_fake_hardware.perform(context)
     if use_fake_hardware_value == "true":
         use_internal_bus_gripper_comm = "false"
+
+    
+
+
+    # Evaluate controllers_file to check if it's an absolute path
+    controllers_file_str = controllers_file.perform(context)
+    # Use a consistent variable name for the path to the controllers file
+    robot_controllers_path: str
+    if os.path.isabs(controllers_file_str):
+        robot_controllers_path = controllers_file_str
+    else:
+        # If not absolute, construct path as before.
+        # controllers_file is a LaunchConfiguration, PathJoinSubstitution handles it.
+        robot_controllers_path = PathJoinSubstitution(
+            [
+                FindPackageShare(description_package.perform(context)),
+                "arms/" + robot_type.perform(context) + "/" + dof.perform(context) + "dof/config",
+                controllers_file, # Pass the LaunchConfiguration object
+            ]
+        ).perform(context) # Perform substitution to get string path for Node parameter
 
     robot_description_content = Command(
         [
@@ -101,6 +127,9 @@ def launch_setup(context, *args, **kwargs):
             " ",
             "dof:=",
             dof,
+            " ",
+            "vision:=",
+            vision,
             " ",
             "prefix:=",
             prefix,
@@ -147,27 +176,15 @@ def launch_setup(context, *args, **kwargs):
             "sim_gazebo:=",
             sim_gazebo,
             " ",
+            "sim_ignition:=", # Add this
+            sim_ignition,
+            " ",
+            "simulation_controllers:=",
+            robot_controllers_path,
+            " ",
         ]
     )
     robot_description = {"robot_description": robot_description_content}
-
-
-    # Evaluate controllers_file to check if it's an absolute path
-    controllers_file_str = controllers_file.perform(context)
-    # Use a consistent variable name for the path to the controllers file
-    robot_controllers_path: str
-    if os.path.isabs(controllers_file_str):
-        robot_controllers_path = controllers_file_str
-    else:
-        # If not absolute, construct path as before.
-        # controllers_file is a LaunchConfiguration, PathJoinSubstitution handles it.
-        robot_controllers_path = PathJoinSubstitution(
-            [
-                FindPackageShare(description_package.perform(context)),
-                "arms/" + robot_type.perform(context) + "/" + dof.perform(context) + "dof/config",
-                controllers_file, # Pass the LaunchConfiguration object
-            ]
-        ).perform(context) # Perform substitution to get string path for Node parameter
 
     rviz_config_file = PathJoinSubstitution(
         [FindPackageShare(description_package.perform(context)), "rviz", rviz_file.perform(context)]
@@ -176,7 +193,10 @@ def launch_setup(context, *args, **kwargs):
         package="controller_manager",
         executable="ros2_control_node",
         # name="controller_manager",  # Explicitly name the node
-        parameters=[robot_controllers_path], # Use the determined path
+        parameters=[
+            robot_controllers_path,
+            {"use_sim_time": use_sim_time},
+            ], # Use the determined path
         remappings=[
             ("~/robot_description", f"{namespace.perform(context)}/robot_description"),
         ],
@@ -187,7 +207,10 @@ def launch_setup(context, *args, **kwargs):
         package="robot_state_publisher",
         executable="robot_state_publisher",
         output="both",
-        parameters=[robot_description],
+        parameters=[
+            robot_description,
+            {"use_sim_time": use_sim_time},
+            ],
     )
 
     rviz_node = Node(
@@ -207,31 +230,7 @@ def launch_setup(context, *args, **kwargs):
             "--controller-manager",
             "controller_manager",
         ],
-    )
-
-    # Gazebo nodes
-    gzserver = ExecuteProcess(
-        cmd=["gzserver", "-s", "libgazebo_ros_init.so", "-s", "libgazebo_ros_factory.so", ""],
-        output="screen",
-        condition=IfCondition(PythonExpression(["'", sim_gazebo.perform(context), "' == 'true' and '", launch_gazebo_server_client.perform(context), "' == 'true'"])),
-    )
-
-    # Gazebo client
-    gzclient = ExecuteProcess(
-        cmd=["gzclient"],
-        output="screen",
-        condition=IfCondition(PythonExpression(["'", sim_gazebo.perform(context), "' == 'true' and '", launch_gazebo_server_client.perform(context), "' == 'true'"])),
-    )
-
-    # Spawn robot
-    gazebo_spawn_robot = Node(
-        package="gazebo_ros",
-        executable="spawn_entity.py",
-        name="spawn_robot",
-        arguments=["-entity", robot_name, "-topic", f"{namespace.perform(context)}/robot_description"],
-        output="screen",
-        condition=IfCondition(PythonExpression(["'", sim_gazebo.perform(context), "' == 'true'"])),
-    )
+    )   
 
     # Delay rviz start after `joint_state_broadcaster`
     delay_rviz_after_joint_state_broadcaster_spawner = RegisterEventHandler(
@@ -261,6 +260,70 @@ def launch_setup(context, *args, **kwargs):
         condition=IfCondition(PythonExpression(["'", gripper, "' != ''"])),
     )
 
+    # Bridge
+    bridge = Node(
+        package="ros_gz_bridge",
+        executable="parameter_bridge",
+        arguments=["/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock"],
+        output="screen",
+    )
+
+    robotiq_description_prefix = get_package_prefix("robotiq_description")
+    gz_robotiq_env_var_resource_path = AppendEnvironmentVariable(
+        "GZ_SIM_RESOURCE_PATH", os.path.join(robotiq_description_prefix, "share")
+    )
+
+    gz_spawn_entity = Node(
+        package="ros_gz_sim",
+        executable="create",
+        output="screen",
+        arguments=[
+            "-string",
+            robot_description_content,
+            "-name",
+            robot_name,
+            "-allow_renaming",
+            "true",
+            "-x",
+            "0.0",
+            "-y",
+            "0.0",
+            "-z",
+            "0.3",
+            "-R",
+            "0.0",
+            "-P",
+            "0.0",
+            "-Y",
+            "0.0",
+        ],
+        condition=IfCondition(sim_gazebo),
+    )
+
+    gz_launch_description = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            [FindPackageShare("ros_gz_sim"), "/launch/gz_sim.launch.py"]
+        ),
+        launch_arguments={
+            "gz_args": " -r -v 3 empty.sdf --physics-engine gz-physics-bullet-featherstone-plugin"
+        }.items(),
+        condition=IfCondition(sim_ignition),
+    )
+
+    # Bridge
+    gazebo_bridge = Node(
+        package="ros_gz_bridge",
+        executable="parameter_bridge",
+        parameters=[{"use_sim_time": use_sim_time}],
+        arguments=[
+            "/wrist_mounted_camera/image@sensor_msgs/msg/Image[gz.msgs.Image",
+            "/wrist_mounted_camera/depth_image@sensor_msgs/msg/Image[gz.msgs.Image",
+            "/wrist_mounted_camera/points@sensor_msgs/msg/PointCloud2[gz.msgs.PointCloudPacked",
+            "/wrist_mounted_camera/camera_info@sensor_msgs/msg/CameraInfo[gz.msgs.CameraInfo",
+        ],
+        output="screen",
+    )
+
     # only start the fault controller if we are using hardware
     fault_controller_spawner = Node(
         package="controller_manager",
@@ -279,10 +342,15 @@ def launch_setup(context, *args, **kwargs):
         fault_controller_spawner,
     ]
 
-    if sim_gazebo.perform(context) == "true" and launch_gazebo_server_client.perform(context) == "true":
-        nodes_to_start.extend([gzserver, gzclient])
     if sim_gazebo.perform(context) == "true":
-        nodes_to_start.append(gazebo_spawn_robot)
+        # Add the gz_spawn_entity node to the list of nodes to start
+        nodes_to_start.append(gz_spawn_entity)
+        nodes_to_start.append(gz_launch_description)
+        nodes_to_start.append(gazebo_bridge)
+        nodes_to_start.append(gz_robotiq_env_var_resource_path)
+        nodes_to_start.append(bridge)
+
+
     start_robot_hand_controller = gripper.perform(context) != ""
     # Conditionally add robot_hand_controller_spawner
     if start_robot_hand_controller:
@@ -513,9 +581,21 @@ def generate_launch_description():
     )
     declared_arguments.append(
         DeclareLaunchArgument(
-            "launch_gazebo_server_client",
-            default_value="true",
-            description="Launch Gazebo server and client. Set to false if Gazebo is launched externally.",
+            "sim_ignition", default_value="false", description="Use Ignition Gazebo (Fortress) simulation."
+        )
+    )
+    declared_arguments.append(
+        DeclareLaunchArgument(
+            "use_sim_time",
+            default_value="false",
+            description="Use simulation time.",
+        )
+    )
+    declared_arguments.append(
+        DeclareLaunchArgument(
+            "vision",
+            default_value="false",
+            description="Use vision.",
         )
     )
 

@@ -10,8 +10,16 @@ setup(
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
-        ('share/' + package_name + '/launch', ['launch/launch_control.py', 'launch/dual_gen3_control_launch.py']),
-        ('share/' + package_name + '/worlds', ['worlds/my_world.world']),
+        ('share/' + package_name + '/launch', [
+            'launch/launch_control.py', 
+            'launch/dual_gen3_control_launch.py', 
+            'launch/view_robot_gazebo.launch.py'
+            ]),
+        ('share/' + package_name + '/worlds', ['worlds/my_world.sdf']),
+        ('share/' + package_name + '/urdf', [
+            'urdf/my_robot.urdf.xacro',
+            ])
+        ('share/' + package_name + '/config', ['config/cart_controller_velocity.yaml']),
 
 
     ],

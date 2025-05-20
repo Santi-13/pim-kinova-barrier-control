@@ -28,18 +28,14 @@
 
     <ros2_control name="${name}" type="system">
       <hardware>
-        <xacro:if value="${sim_ignition}">
-          <plugin>ign_ros2_control/IgnitionSystem</plugin>
-        </xacro:if>
-
         <xacro:if value="${sim_gazebo}">
+          <!-- Use GazeboSystem for Gazebo Classic -->
           <plugin>gz_ros2_control/GazeboSimSystem</plugin>
         </xacro:if>
-
-        <xacro:unless value="${sim_ignition or sim_gazebo}">
+        <xacro:unless value="${sim_gazebo}">
           <xacro:if value="${use_fake_hardware}">
             <!-- Your custom hardware interface -->
-            <plugin>kortex_description/RobotSystem</plugin>
+            <plugin>kortex_description/RobotSystem</plugin>          
             <param name="command_interfaces">
               - velocity
             </param>
@@ -65,9 +61,8 @@
             <param name="gripper_max_velocity">${gripper_max_velocity}</param>
             <param name="gripper_max_force">${gripper_max_force}</param>
           </xacro:unless>
-        
         </xacro:unless>
-                
+        
       </hardware>
       <joint name="${prefix}joint_1">
         <command_interface name="velocity">
