@@ -31,7 +31,8 @@
     gripper_max_velocity:=100.0
     gripper_max_force:=100.0
     gripper_com_port:=/dev/ttyUSB0
-    moveit_active:=false">
+    moveit_active:=false
+    robot_controller:=robot1_controllers.yaml">
 
     <!-- Include and load arm macro files -->
     <xacro:include filename="$(find kortex_description)/arms/${arm}/${dof}dof/urdf/${arm}_macro.xacro" />
@@ -62,7 +63,8 @@
       gripper_max_force="${gripper_max_force}"
       use_external_cable="${use_external_cable}"
       initial_positions="${initial_positions}"
-      moveit_active="${moveit_active}">
+      moveit_active="${moveit_active}"
+      robot_controller="${robot_controller}">
       <xacro:insert_block name="origin" />
     </xacro:load_arm>
 

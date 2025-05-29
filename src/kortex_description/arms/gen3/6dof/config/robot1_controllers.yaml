@@ -5,61 +5,10 @@
     joint_state_broadcaster:
       type: joint_state_broadcaster/JointStateBroadcaster
 
-    joint_trajectory_controller:
-      type: joint_trajectory_controller/JointTrajectoryController
-
-    twist_controller:
-      type: picknik_twist_controller/PicknikTwistController
-
-    robotiq_gripper_controller:
-      type: position_controllers/GripperActionController
-
-    fault_controller:
-      type: picknik_reset_fault_controller/PicknikResetFaultController
-
-    joint_group_velocity_controller:
+    robot1_controllers:
       type: velocity_controllers/JointGroupVelocityController
 
-
-/robot1/joint_trajectory_controller:
-  ros__parameters:
-    joints:
-      - robot1/joint_1
-      - robot1/joint_2
-      - robot1/joint_3
-      - robot1/joint_4
-      - robot1/joint_5
-      - robot1/joint_6
-    command_interfaces:
-      - position
-    state_interfaces:
-      - position
-      - velocity
-    state_publish_rate: 100.0
-    action_monitor_rate: 20.0
-    allow_partial_joints_goal: false
-    constraints:
-      stopped_velocity_tolerance: 0.0
-      goal_time: 0.0
-
-/robot1/twist_controller:
-  ros__parameters:
-    joint: tcp
-    interface_names:
-      - twist.linear.x
-      - twist.linear.y
-      - twist.linear.z
-      - twist.angular.x
-      - twist.angular.y
-      - twist.angular.z
-
-/robot1/robotiq_gripper_controller:
-  ros__parameters:
-    default: true
-    joint: robotiq_85_left_knuckle_joint
-    allow_stalling: true
-
-/robot1/joint_group_velocity_controller:
+/robot1/robot1_controllers:
   ros__parameters:
     joints:
       - robot1/joint_1

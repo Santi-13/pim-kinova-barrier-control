@@ -25,6 +25,7 @@
     <xacro:arg name="fake_sensor_commands" default="false" />
     <xacro:arg name="use_internal_bus_gripper_comm" default="false" />
     <xacro:arg name="use_external_cable" default="false" />
+    <xacro:arg name="robot_controller" default="robot1_controllers.yaml" />
 
     <!-- Arguments for initial pose of the robot relative to its parent link (world) -->
     <xacro:arg name="initial_pose_x" default="0.0"/>
@@ -63,7 +64,8 @@
         sim_ignition="$(arg sim_ignition)"
         sim_isaac="$(arg sim_isaac)"
         use_external_cable="$(arg use_external_cable)"
-        initial_positions="${xacro.load_yaml(initial_positions_file)}">
+        initial_positions="${xacro.load_yaml(initial_positions_file)}"
+        robot_controller="$(arg robot_controller)">
         <origin xyz="$(arg initial_pose_x) $(arg initial_pose_y) $(arg initial_pose_z)"
                 rpy="$(arg initial_pose_roll) $(arg initial_pose_pitch) $(arg initial_pose_yaw)" />
     </xacro:load_robot>

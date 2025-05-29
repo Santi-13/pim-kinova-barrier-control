@@ -84,7 +84,7 @@
     </gazebo>
   </xacro:if>
 
-  <xacro:if value="$(arg sim_ignition)">
+  <!-- <xacro:if value="$(arg sim_ignition)">
     <!-- Gazebo plugins -->
     <gazebo reference="world">
     </gazebo>
@@ -158,6 +158,6 @@
         <enable_metrics>false</enable_metrics>
       </sensor>
     </gazebo>
-  </xacro:if>
+  </xacro:if> -->
 
 </robot>

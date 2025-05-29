@@ -24,12 +24,14 @@
     gripper_joint_name
     gripper_max_velocity:=100.0
     gripper_max_force:=100.0
-    moveit_active:=false">
+    moveit_active:=false
+    robot_controller:=robot1_controllers.yaml"
+    >
 
     <ros2_control name="${name}" type="system">
       <hardware>
         <xacro:if value="${sim_ignition}">
-          <plugin>ign_ros2_control/IgnitionSystem</plugin>
+          <plugin>gz_ros2_control/GazeboSimSystem</plugin>
         </xacro:if>
 
         <xacro:if value="${sim_gazebo}">
@@ -193,6 +195,11 @@
         </joint>
       </xacro:if>
     </ros2_control>
+    <gazebo>
+      <plugin filename="gz_ros2_control-system" name="gz_ros2_control::GazeboSimROS2ControlPlugin">    
+        <parameters>$(find ros_gz_sim_demos)/config/${robot_controller}</parameters>
+      </plugin>
+    </gazebo>
   </xacro:macro>
 
 </robot>

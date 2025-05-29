@@ -183,6 +183,20 @@ def generate_launch_description():
             description="Use simulation time.",
         )
     )
+    declared_arguments.append(
+        DeclareLaunchArgument(
+            "gazebo_world_file",
+            default_value="",
+            description="Path to the Gazebo world file to load.",
+        )
+    )
+    declared_arguments.append(
+        DeclareLaunchArgument(
+            "headless_rendering",
+            default_value="false",
+            description="Run Gazebo in headless mode (no GUI).",
+        )
+    )
 
 
     # Initialize Arguments
@@ -206,6 +220,7 @@ def generate_launch_description():
     launch_gazebo_server_client = LaunchConfiguration("launch_gazebo_server_client")
     sim_ignition = LaunchConfiguration("sim_ignition")
     use_sim_time = LaunchConfiguration("use_sim_time")
+
     # Initial Pose Arguments
     initial_pose_x = LaunchConfiguration("initial_pose_x")
     initial_pose_y = LaunchConfiguration("initial_pose_y")
@@ -213,6 +228,10 @@ def generate_launch_description():
     initial_pose_roll = LaunchConfiguration("initial_pose_roll")
     initial_pose_pitch = LaunchConfiguration("initial_pose_pitch")
     initial_pose_yaw = LaunchConfiguration("initial_pose_yaw")
+
+    # Gazebo specific arguments (newly added for sim_gazebo)
+    gazebo_world_file = LaunchConfiguration("gazebo_world_file")
+    headless_rendering = LaunchConfiguration("headless_rendering")
 
     base_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource([ThisLaunchFileDir(), "/kortex_control.launch.py"]),
@@ -244,6 +263,8 @@ def generate_launch_description():
             "sim_ignition": sim_ignition, 
             "launch_gazebo_server_client": launch_gazebo_server_client,
             "use_sim_time": use_sim_time,
+            "gazebo_world_file": gazebo_world_file,
+            "headless_rendering": headless_rendering,
         }.items(),
     )
 

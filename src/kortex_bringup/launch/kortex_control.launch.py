@@ -77,13 +77,14 @@ def launch_setup(context, *args, **kwargs):
     initial_pose_pitch = LaunchConfiguration("initial_pose_pitch")
     initial_pose_yaw = LaunchConfiguration("initial_pose_yaw")
 
+    # Gazebo specific arguments (newly added for sim_gazebo)
+    gazebo_world_file = LaunchConfiguration("gazebo_world_file")
+    headless_rendering = LaunchConfiguration("headless_rendering")
+
     # if we are using fake hardware then we can't use the internal gripper communications of the hardware
     use_fake_hardware_value = use_fake_hardware.perform(context)
     if use_fake_hardware_value == "true":
         use_internal_bus_gripper_comm = "false"
-
-    
-
 
     # Evaluate controllers_file to check if it's an absolute path
     controllers_file_str = controllers_file.perform(context)
@@ -211,6 +212,9 @@ def launch_setup(context, *args, **kwargs):
             robot_description,
             {"use_sim_time": use_sim_time},
             ],
+        remappings=[ # Add remapping for namespaced robot_description
+            ("robot_description", PathJoinSubstitution([namespace, "robot_description"])),
+        ],
     )
 
     rviz_node = Node(
@@ -228,7 +232,8 @@ def launch_setup(context, *args, **kwargs):
         arguments=[
             "joint_state_broadcaster",
             "--controller-manager",
-            "controller_manager",
+            PathJoinSubstitution([namespace, "controller_manager"]), # Use namespaced controller_manager
+
         ],
     )   
 
@@ -247,11 +252,11 @@ def launch_setup(context, *args, **kwargs):
         arguments=[robot_traj_controller, "-c", "controller_manager"],
     )
 
-    robot_pos_controller_spawner = Node(
-        package="controller_manager",
-        executable="spawner",
-        arguments=[robot_pos_controller, "--inactive", "-c", "controller_manager"],
-    )
+    # robot_pos_controller_spawner = Node(
+    #     package="controller_manager",
+    #     executable="spawner",
+    #     arguments=[robot_pos_controller, "--inactive", "-c", "controller_manager"],
+    # )
 
     robot_hand_controller_spawner = Node(
         package="controller_manager",
@@ -260,68 +265,69 @@ def launch_setup(context, *args, **kwargs):
         condition=IfCondition(PythonExpression(["'", gripper, "' != ''"])),
     )
 
-    # Bridge
-    bridge = Node(
-        package="ros_gz_bridge",
-        executable="parameter_bridge",
-        arguments=["/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock"],
-        output="screen",
-    )
 
     robotiq_description_prefix = get_package_prefix("robotiq_description")
     gz_robotiq_env_var_resource_path = AppendEnvironmentVariable(
         "GZ_SIM_RESOURCE_PATH", os.path.join(robotiq_description_prefix, "share")
     )
 
-    gz_spawn_entity = Node(
-        package="ros_gz_sim",
-        executable="create",
-        output="screen",
-        arguments=[
-            "-string",
-            robot_description_content,
-            "-name",
-            robot_name,
-            "-allow_renaming",
-            "true",
-            "-x",
-            "0.0",
-            "-y",
-            "0.0",
-            "-z",
-            "0.3",
-            "-R",
-            "0.0",
-            "-P",
-            "0.0",
-            "-Y",
-            "0.0",
-        ],
-        condition=IfCondition(sim_gazebo),
-    )
+    # gz_spawn_entity = Node(
+    #     package="ros_gz_sim",
+    #     executable="create",
+    #     output="screen",
+    #     arguments=[
+    #         "-string",
+    #         robot_description_content,
+    #         "-name",
+    #         robot_name,
+    #         "-allow_renaming",
+    #         "true",
+    #         "-x",
+    #         "0.0",
+    #         "-y",
+    #         "0.0",
+    #         "-z",
+    #         "0.3",
+    #         "-R",
+    #         "0.0",
+    #         "-P",
+    #         "0.0",
+    #         "-Y",
+    #         "0.0",
+    #     ],
+    #     condition=IfCondition(sim_gazebo),
+    # )
 
-    gz_launch_description = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            [FindPackageShare("ros_gz_sim"), "/launch/gz_sim.launch.py"]
-        ),
-        launch_arguments={
-            "gz_args": " -r -v 3 empty.sdf --physics-engine gz-physics-bullet-featherstone-plugin"
-        }.items(),
+    gz_spawn_entity = Node(
+        package='ros_gz_sim',
+        executable='create',
+        output='screen',
+        arguments=['-topic', 
+                   f"{namespace.perform(context)}/robot_description",
+                   '-name',
+                   robot_name, 
+                   '-allow_renaming', 
+                   'true'
+                   # Adding initial pose arguments for Ignition as well for consistency
+                   '-x', initial_pose_x,
+                   '-y', initial_pose_y,
+                   '-z', initial_pose_z,
+                   '-R', initial_pose_roll,
+                   '-P', initial_pose_pitch,
+                   '-Y', initial_pose_yaw,
+                   ],
+
         condition=IfCondition(sim_ignition),
     )
 
+
+
     # Bridge
-    gazebo_bridge = Node(
-        package="ros_gz_bridge",
-        executable="parameter_bridge",
-        parameters=[{"use_sim_time": use_sim_time}],
-        arguments=[
-            "/wrist_mounted_camera/image@sensor_msgs/msg/Image[gz.msgs.Image",
-            "/wrist_mounted_camera/depth_image@sensor_msgs/msg/Image[gz.msgs.Image",
-            "/wrist_mounted_camera/points@sensor_msgs/msg/PointCloud2[gz.msgs.PointCloudPacked",
-            "/wrist_mounted_camera/camera_info@sensor_msgs/msg/CameraInfo[gz.msgs.CameraInfo",
-        ],
-        output="screen",
+    bridge = Node(
+        package='ros_gz_bridge',
+        executable='parameter_bridge',
+        arguments=['/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock'],
+        output='screen'
     )
 
     # only start the fault controller if we are using hardware
@@ -329,7 +335,7 @@ def launch_setup(context, *args, **kwargs):
         package="controller_manager",
         executable="spawner",
         arguments=[fault_controller, "-c", "controller_manager"],
-        condition=IfCondition(use_internal_bus_gripper_comm),
+        condition=IfCondition(PythonExpression(["'", use_internal_bus_gripper_comm, "' == 'true'"])), # Condition on evaluated string
     )
 
     nodes_to_start = [
@@ -338,23 +344,63 @@ def launch_setup(context, *args, **kwargs):
         joint_state_broadcaster_spawner,
         delay_rviz_after_joint_state_broadcaster_spawner,
         robot_traj_controller_spawner,
-        robot_pos_controller_spawner,
+        # robot_pos_controller_spawner,
         fault_controller_spawner,
     ]
 
-    if sim_gazebo.perform(context) == "true":
-        # Add the gz_spawn_entity node to the list of nodes to start
+    sim_gazebo_value = sim_gazebo.perform(context)
+    sim_ignition_value = sim_ignition.perform(context)
+
+    if sim_ignition_value == "true":
+        pkg_ros_gz_sim = FindPackageShare('ros_gz_sim')
+
+        # Construct a valid Python expression string that, when evaluated,
+        # gives the desired gz_args string.
+        gz_args_expression = PythonExpression([
+            "'-r -v 1 '",                                      # Python string literal for Gazebo args part 1
+            " + ' ' + str('", gazebo_world_file, "')",         # Add space and the world file (ensuring it's a string in Python)
+            " + (' --headless-rendering' if str('", headless_rendering, "').lower() == 'true' else '')" # Conditional headless part
+        ])
+
+
+        gazebo_launch = IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(
+                [PathJoinSubstitution([pkg_ros_gz_sim, 'launch', 'gz_sim.launch.py'])]
+            ),
+            launch_arguments=[('gz_args', [' -r -v 1 ', gazebo_world_file])],
+        )  
+        nodes_to_start.append(gazebo_launch)
         nodes_to_start.append(gz_spawn_entity)
-        nodes_to_start.append(gz_launch_description)
-        nodes_to_start.append(gazebo_bridge)
+
+        nodes_to_start.append(RegisterEventHandler(
+            event_handler=OnProcessExit(
+                target_action=gz_spawn_entity,
+                on_exit=[joint_state_broadcaster_spawner],
+            )
+        ))
+
+        # Determine actions to run after joint_state_broadcaster_spawner exits
+        on_exit_actions_after_jsb = [robot_traj_controller_spawner]
+        # robot_hand_controller_spawner has its own condition based on 'gripper'
+        # It's safe to add it here; it will only run if its condition is met.
+        on_exit_actions_after_jsb.append(robot_hand_controller_spawner)
+
+        nodes_to_start.append(RegisterEventHandler(
+            event_handler=OnProcessExit(
+                target_action=joint_state_broadcaster_spawner,
+                on_exit=on_exit_actions_after_jsb,
+            )
+        ))
+    
         nodes_to_start.append(gz_robotiq_env_var_resource_path)
         nodes_to_start.append(bridge)
 
 
-    start_robot_hand_controller = gripper.perform(context) != ""
-    # Conditionally add robot_hand_controller_spawner
-    if start_robot_hand_controller:
-        nodes_to_start.append(robot_hand_controller_spawner)
+
+    # start_robot_hand_controller = gripper.perform(context) != ""
+    # # Conditionally add robot_hand_controller_spawner
+    # if start_robot_hand_controller:
+    #     nodes_to_start.append(robot_hand_controller_spawner)
 
     return nodes_to_start
 
@@ -484,34 +530,34 @@ def generate_launch_description():
             Used only if 'use_fake_hardware' parameter is true.",
         )
     )
-    declared_arguments.append(
-        DeclareLaunchArgument(
-            "robot_controller",
-            default_value="joint_trajectory_controller",
-            description="Robot controller to start.",
-        )
-    )
-    declared_arguments.append(
-        DeclareLaunchArgument(
-            "robot_pos_controller",
-            default_value="twist_controller",
-            description="Robot controller to start.",
-        )
-    )
-    declared_arguments.append(
-        DeclareLaunchArgument(
-            "robot_hand_controller",
-            default_value="robotiq_gripper_controller",
-            description="Robot hand controller to start.",
-        )
-    )
-    declared_arguments.append(
-        DeclareLaunchArgument(
-            "fault_controller",
-            default_value="fault_controller",
-            description="Name of the 'fault controller.",
-        )
-    )
+    # declared_arguments.append(
+    #     DeclareLaunchArgument(
+    #         "robot_controller",
+    #         default_value="joint_trajectory_controller",
+    #         description="Robot controller to start.",
+    #     )
+    # )
+    # declared_arguments.append(
+    #     DeclareLaunchArgument(
+    #         "robot_pos_controller",
+    #         default_value="twist_controller",
+    #         description="Robot controller to start.",
+    #     )
+    # )
+    # declared_arguments.append(
+    #     DeclareLaunchArgument(
+    #         "robot_hand_controller",
+    #         default_value="robotiq_gripper_controller",
+    #         description="Robot hand controller to start.",
+    #     )
+    # )
+    # declared_arguments.append(
+    #     DeclareLaunchArgument(
+    #         "fault_controller",
+    #         default_value="fault_controller",
+    #         description="Name of the 'fault controller.",
+    #     )
+    # )
     declared_arguments.append(
         DeclareLaunchArgument("launch_rviz", default_value="true", description="Launch RViz?")
     )
@@ -581,6 +627,20 @@ def generate_launch_description():
     )
     declared_arguments.append(
         DeclareLaunchArgument(
+            "gazebo_world_file",
+            default_value="empty.world", 
+            description="Path to the Gazebo world file to load (e.g., 'src/my_package/worlds/my_world.sdf'). Relative paths are resolved from where launch is run.",
+        )
+    )
+    declared_arguments.append(
+        DeclareLaunchArgument(
+            "headless_rendering",
+            default_value="false",
+            description="Enable headless rendering for Gazebo simulation (gz_args '--headless-rendering').",
+        )
+    )
+    declared_arguments.append(
+        DeclareLaunchArgument(
             "sim_ignition", default_value="false", description="Use Ignition Gazebo (Fortress) simulation."
         )
     )
@@ -599,4 +659,6 @@ def generate_launch_description():
         )
     )
 
-    return LaunchDescription(declared_arguments + [OpaqueFunction(function=launch_setup)])
+    return LaunchDescription(
+        declared_arguments + [OpaqueFunction(function=launch_setup)]
+                             )

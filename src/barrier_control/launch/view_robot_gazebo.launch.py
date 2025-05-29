@@ -12,8 +12,9 @@ def generate_launch_description():
 
     # Constants
     package_name = 'barrier_control' # Change to your package name
-    xacro_file_name = 'my_robot.urdf.xacro' # Change to your xacro file name
+    xacro_file_name = 'rrbot.xacro' # Change to your xacro file name
     world_file_name = 'my_world.sdf' # Optional: your world file
+    robot_controller_config_file = 'rrbot_controllers.yaml'
 
     # Paths
     pkg_share = FindPackageShare(package=package_name).find(package_name)
@@ -22,8 +23,8 @@ def generate_launch_description():
 
     # Launch Arguments
     use_sim_time = LaunchConfiguration('use_sim_time', default='true')
-    gz_verbosity = LaunchConfiguration('gz_verbosity', default='3') # 0=Quiet, 1=Err, 2=Warn, 3=Info, 4=Debug
-    headless = LaunchConfiguration('headless', default='false') # Set to 'true' for headless Gazebo
+    gz_args = LaunchConfiguration('gz_args', default='')
+    gz_verbosity = LaunchConfiguration('gz_verbosity', default='1') # 0=Quiet, 1=Err, 2=Warn, 3=Info, 4=Debug
 
     # 1. Process the XACRO file to get URDF
     robot_description_content = Command([
@@ -37,9 +38,16 @@ def generate_launch_description():
         # ' gazebo_control_config_file:=my_controllers.yaml'
     ])
 
+    # 2. Controller Configuration
+    robot_controllers = PathJoinSubstitution(
+        [
+            pkg_share,
+            'config',
+            robot_controller_config_file,
+        ]
+    )
 
-
-    # 2. Robot State Publisher Node
+    # 3. Robot State Publisher Node
     # Takes the URDF and publishes transforms (/tf) and the robot description
     robot_state_publisher_node = Node(
         package='robot_state_publisher',
@@ -51,46 +59,31 @@ def generate_launch_description():
         }]
     )
 
-    # 3. Joint State Publisher GUI Node (for testing without actual robot hardware)
-    # Publishes dummy joint states. You can move the sliders in the GUI.
-    # For a real robot, you would have a hardware interface node publishing actual joint states.
-    joint_state_publisher_gui_node = Node(
-        package='joint_state_publisher_gui',
-        executable='joint_state_publisher_gui',
-        name='joint_state_publisher_gui', # Optional: good practice to name nodes
-        output='screen',
-        parameters=[{'use_sim_time': use_sim_time}],
-        # condition=IfCondition(LaunchConfiguration('start_jsp_gui')) # Example for conditional launch
+    # 4. Joint State 
+    joint_state_broadcaster_spawner = Node(
+        package='controller_manager',
+        executable='spawner',
+        arguments=['joint_state_broadcaster'],
     )
-    # Or, without GUI:
-    # joint_state_publisher_node = Node(
-    #     package='joint_state_publisher',
-    #     executable='joint_state_publisher',
-    #     name='joint_state_publisher',
-    #     output='screen',
-    #     parameters=[{'use_sim_time': use_sim_time}],
-    # )
 
-
-    # 4. Launch Gazebo Sim
-    # The `gz sim` executable (formerly `ign gazebo`)
-    # gz_sim = IncludeLaunchDescription(
-    #     PythonLaunchDescriptionSource(
-    #         os.path.join(get_package_share_directory('ros_gz_sim'), 'launch', 'gz_sim.launch.py')
-    #     ),
-    #     launch_arguments={
-    #         'gz_args': ['-r -v 4 ', world_file_path], # -r: run on startup, -v 4: verbosity
-    #         # 'gz_args': ['-r -v 4 ', LaunchConfiguration('world')], # If world is a launch argument
-    #         # 'on_exit_shutdown': 'true', # Shutdown gz sim if this launch file is terminated
-    #     }.items()
-    # )
-    # OR: Launch Gazebo using ExecuteProcess for more control if needed, or if you have a specific world
-    gazebo_process = ExecuteProcess(
-        cmd=['ign', 'gazebo', '-r', # '-s', '--headless-rendering', # Uncomment for server-only or headless
-             world_file_path, # Optional: if you have a world file
-             '-v', gz_verbosity, # Control Gazebo's verbosity
+    joint_trajectory_controller_spawner = Node(
+        package='controller_manager',
+        executable='spawner',
+        arguments=[
+            'joint_trajectory_controller',
+            '--param-file',
+            robot_controllers,
             ],
-        output='screen'
+    )
+
+    imu_sensor_broadcaster_spawner = Node(
+        package='controller_manager',
+        executable='spawner',
+        arguments=[
+            'imu_sensor_broadcaster',
+            '--param-file',
+            robot_controllers,
+            ],
     )
 
 
@@ -102,6 +95,7 @@ def generate_launch_description():
         executable='create',
         output='screen',
         arguments=[
+            '-topic', 'robot_description', # The topic where the robot description is published
             '-string', robot_description_content, # Pass the URDF string
             '-name', 'my_robot',           # Name of the entity in Gazebo
             '-allow_renaming', 'true',     # Allow Gazebo to rename if the name conflicts
@@ -126,7 +120,6 @@ def generate_launch_description():
         output='screen',
         parameters=[{
             'use_sim_time': use_sim_time,
-            'qos_overrides./tf_static.publisher.durability': 'transient_local',
             }]
     )
 
@@ -143,31 +136,6 @@ def generate_launch_description():
     #    parameters=[{'use_sim_time': use_sim_time}]
     # )
 
-    # Example: Bridge a Lidar sensor
-    # bridge_lidar = Node(
-    #    package='ros_gz_bridge',
-    #    executable='parameter_bridge',
-    #    name='bridge_gz_ros_lidar',
-    #    # Assuming your Lidar in Gazebo publishes to /lidar and its Gz type is gz.msgs.LaserScan
-    #    arguments=['/lidar@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan'],
-    #    remappings=[('/lidar', '/scan')], # Remap to /scan or your preferred ROS topic
-    #    output='screen',
-    #    parameters=[{'use_sim_time': use_sim_time}]
-    # )
-
-
-    # Optional: Delay start of spawn_entity_node until Gazebo is ready
-    # This can be tricky. A common approach is to wait for a specific Gazebo service or topic.
-    # For simplicity, a fixed delay or manual trigger might be used for basic setups.
-    # A more robust way: use an event handler to trigger spawning after Gazebo starts.
-    # For example, wait for the `/world/{world_name}/create` service to be available.
-
-    # Ensure Gazebo server is launched before trying to spawn entities or bridges
-    # One way to do this: use an event handler on the Gazebo process.
-    # However, just because the process started doesn't mean its services are ready.
-    # A more robust solution involves checking for specific Gazebo services.
-    # For this example, we'll launch them sequentially, which often works but isn't guaranteed.
-
     return LaunchDescription([
         # Launch Arguments
         DeclareLaunchArgument('use_sim_time', default_value='true',
@@ -178,31 +146,30 @@ def generate_launch_description():
                               description='Run Gazebo Ignition in headless mode.'),
 
         # Start Gazebo
-        # gz_sim, # Using IncludeLaunchDescription
-        gazebo_process, # Using ExecuteProcess
+        # Launch gazebo environment
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(
+                [PathJoinSubstitution([FindPackageShare('ros_gz_sim'),
+                                       'launch',
+                                       'gz_sim.launch.py'])]),
+            launch_arguments=[('gz_args', [gz_args, ' -r -v ', gz_verbosity, ' empty.sdf'])]),
+        RegisterEventHandler(
+            event_handler=OnProcessExit(
+                target_action=spawn_entity_node,
+                on_exit=[joint_state_broadcaster_spawner],
+            )
+        ),
+        RegisterEventHandler(
+            event_handler=OnProcessExit(
+                target_action=joint_state_broadcaster_spawner,
+                on_exit=[joint_trajectory_controller_spawner,
+                         imu_sensor_broadcaster_spawner],
+            )
+        ),
 
         # Nodes
         robot_state_publisher_node,
-        joint_state_publisher_gui_node,
-        # joint_state_publisher_node, # If not using GUI
-
-        # Spawn robot after Gazebo is up (simple sequential, might need better sync for complex setups)
-        # A better way is to use an EventHandler to trigger spawn_entity_node
-        # once a Gazebo service like `/world/default/create` is available.
-        # For now, we'll launch it directly. If it fails, Gazebo might not have been ready.
         spawn_entity_node,
-
         # Bridges
         bridge_clock,
-        # bridge_joint_states, # Uncomment if you have joint states published from Gazebo
-        # bridge_lidar,      # Uncomment if you have a Lidar in Gazebo
-
-        # Example: Ensure spawn_entity runs after Gazebo starts (basic event handling)
-        # This is a very basic way to try and sequence. A service check is more robust.
-        # RegisterEventHandler(
-        #     event_handler=OnProcessStart( # This event might not exist, OnProcessExit is common
-        #         target_action=gazebo_process, # Or gz_sim if using IncludeLaunchDescription
-        #         on_start=[spawn_entity_node]
-        #     )
-        # ),
     ])
