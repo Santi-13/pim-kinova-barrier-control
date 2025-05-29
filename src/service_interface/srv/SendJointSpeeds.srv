@@ -1,0 +1,9 @@
+# Request part
+int32 arm_index                 # 0 for the first arm, 1 for the second
+float64[6] joint_speeds       # Array of 6 joint speeds in degrees per second
+float64 duration                # Duration to send speeds, in seconds
+int32 control_frequency         # Control loop frequency (e.g., 1-100 Hz for Kortex low-level)
+---
+# Response part
+bool success                    # True if the command was accepted/attempted, False on error
+string message                  # Informational message, e.g., "Speeds sent" or error details

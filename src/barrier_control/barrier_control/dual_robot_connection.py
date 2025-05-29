@@ -12,7 +12,7 @@ from kortex_api.autogen.client_stubs.ActuatorConfigClientRpc import ActuatorConf
 
 import time
 
-from utils import Utils
+from .utils import Utils
 
 class KinovaDualArmController(Utils):
     def __init__(self, 
