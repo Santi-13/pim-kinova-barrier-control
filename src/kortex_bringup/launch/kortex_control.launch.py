@@ -344,7 +344,7 @@ def launch_setup(context, *args, **kwargs):
             return [rviz_node_inst] # rviz_node_inst already has IfCondition(launch_rviz)
         return []
     
-    if managed_by_external_controller.perform(context) == "false":
+    if use_fake_hardware.perform(context) == "false":
         nodes_to_start.append(joint_state_broadcaster_spawner)
         nodes_to_start.append(robot_traj_controller_spawner)
     nodes_to_start.append(robot_hand_controller_spawner) # It has its own IfCondition

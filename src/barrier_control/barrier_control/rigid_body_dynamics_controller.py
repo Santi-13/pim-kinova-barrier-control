@@ -14,6 +14,7 @@ from sensor_msgs.msg import JointState
 from ament_index_python.packages import get_package_share_directory
 from scipy.spatial.transform import Rotation as R_scipy # For Euler to Quaternion conversion
 import tempfile # For creating temporary files
+import quaternion 
 
 from service_interface.srv import SendJointSpeeds 
 
@@ -34,7 +35,7 @@ class RigidBodyDynamicsController(Node):
         self.declare_parameter('target_pose_topic', '/target_pose')
         self.declare_parameter('velocity_command_topic', '/joint_group_velocity_controller/commands')
         self.declare_parameter('velocity_command_service', '/send_joint_speeds')
-        self.declare_parameter('use_service_velocity_command', False) 
+        self.declare_parameter('use_service_velocity_command_str', 'false') # Expecting 'true' or 'false' string
         self.declare_parameter('arm_index', 0)
         self.declare_parameter('robot_description_package', 'kortex_description')
         self.declare_parameter('robot_description_xacro_path', 'robots/gen3.xacro')
@@ -62,10 +63,15 @@ class RigidBodyDynamicsController(Node):
         self.max_joint_velocities_np = np.array(self.get_parameter('max_joint_velocities').value)
         self.control_frequency = self.get_parameter('control_frequency').value
         self.controlled_joint_names = self.get_parameter('controlled_joint_names').value
-        self.joint_limit_buffer_val = self.get_parameter('joint_limit_buffer').value
+        self.joint_limit_buffer_fval = self.get_parameter('joint_limit_buffer').value
         self.error_tolerance_np = np.array(self.get_parameter('error_tolerance').value)
         self.euler_input_convention = self.get_parameter('euler_input_convention').value.lower()
-        self.use_service_command = self.get_parameter('use_service_velocity_command').value
+        # Convert the string parameter to boolean for use_service_command
+        use_fake_hardware_str = self.get_parameter('use_service_velocity_command_str').value
+        self.use_service_command = (use_fake_hardware_str == 'false') # Service is used if fake_hardware is 'false'
+        self.get_logger().info(f"Retrieved 'use_fake_hardware_str': {use_fake_hardware_str} (type: {type(use_fake_hardware_str)})")
+        self.get_logger().info(f"Derived 'use_service_command': {self.use_service_command} (type: {type(self.use_service_command)})")           
+
         self.arm_index_for_service = self.get_parameter('arm_index').value
         self.velocity_command_service_name = self.get_parameter('velocity_command_service').value
 
@@ -260,7 +266,7 @@ class RigidBodyDynamicsController(Node):
         # Orientation Error Calculation
         # Convert ROS quaternions (x,y,z,w) to numpy-quaternion objects (w,x,y,z)
         
-        q_target_npq = np.quaternion(
+        q_target_npq = quaternion.as_quat_array([
             # current_pose.pose.orientation.w, # Use the passed current_pose
             # current_pose.pose.orientation.x,
             # current_pose.pose.orientation.y,
@@ -269,14 +275,14 @@ class RigidBodyDynamicsController(Node):
             target_pose.pose.orientation.x,
             target_pose.pose.orientation.y,
             target_pose.pose.orientation.z
-        )
+        ])
         
-        q_current_npq = np.quaternion(
+        q_current_npq = quaternion.as_quat_array([
             current_pose.pose.orientation.w, # Use the passed current_pose
             current_pose.pose.orientation.x,
             current_pose.pose.orientation.y,
             current_pose.pose.orientation.z
-        )
+        ])
         
         # Calculate error quaternion: rotation from current to target
         # q_target = q_error * q_current => q_error = q_target * conjugate(q_current)
@@ -537,12 +543,14 @@ class RigidBodyDynamicsController(Node):
         else:
             final_velocities_to_publish = velocities
 
-        msg = Float64MultiArray()
-        msg.data = final_velocities_to_publish.tolist()
-        self.velocity_pub.publish(msg)
-
-        # Also send via service if enabled and conditions met
-        self.send_joint_speeds_via_service(final_velocities_to_publish)
+        if self.use_service_command:
+            # Send via service if enabled
+            self.send_joint_speeds_via_service(final_velocities_to_publish)
+        else:
+            # Otherwise, publish to the topic
+            msg = Float64MultiArray()
+            msg.data = final_velocities_to_publish.tolist()
+            self.velocity_pub.publish(msg)
 
     def control_loop_callback(self):
         """Main control loop executed at a fixed frequency."""
