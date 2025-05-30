@@ -131,6 +131,16 @@ def generate_launch_description():
             description="Run Gazebo in headless mode (no GUI).",
         )
     )
+    declared_arguments.append(
+        DeclareLaunchArgument(
+            "robot1_ip_real", default_value="192.168.1.10", description="Real IP for Robot 1 (if use_fake_hardware is false)."
+        )
+    )
+    declared_arguments.append(
+        DeclareLaunchArgument(
+            "robot2_ip_real", default_value="192.168.1.11", description="Real IP for Robot 2 (if use_fake_hardware is false)."
+        )
+    )
 
 
     # --- Common Paths ---
@@ -150,6 +160,20 @@ def generate_launch_description():
     robot1_joint_state_topic = 'joint_states' # Relative topic name within namespace
     robot1_velocity_command_topic = 'robot1_controllers/commands' # Relative topic name
     
+    # Logic for use_fake_hardware passed to gen3.launch.py
+    # If main use_fake_hardware is false (real robot) AND not Gazebo/Ignition, gen3.launch uses its fake_hardware.
+    # Otherwise, gen3.launch uses the main use_fake_hardware setting.
+    gen3_use_fake_hardware_setting = PythonExpression([
+        "'true' if ('", use_fake_hardware, "' == 'false' and '", sim_gazebo, "' == 'false' and '", sim_ignition, "' == 'false') else '", use_fake_hardware, "'"
+    ])
+    # If main use_fake_hardware is false (real robot mode), then gen3.launch.py is told it's managed externally.
+    gen3_managed_by_external_controller_setting = PythonExpression([
+        "'true' if '", use_fake_hardware, "' == 'false' else 'false'"
+    ])
+    LogInfo(msg=f"========================\ngen3_use_fake_hardware_setting: {gen3_use_fake_hardware_setting}")
+
+    
+
     # --- Robot 2 Configuration ---
     robot2_namespace = 'robot2'
     robot2_controller_name = 'robot2_controller'
@@ -172,7 +196,7 @@ def generate_launch_description():
                 PythonLaunchDescriptionSource(gen3_launch_file),
                 launch_arguments={
                     'dof': '6',
-                    'use_fake_hardware': use_fake_hardware,
+                    'use_fake_hardware': gen3_use_fake_hardware_setting,
                     'sim_gazebo': sim_gazebo,
                     'sim_ignition': sim_ignition,
                     'use_sim_time': use_sim_time,
@@ -191,9 +215,13 @@ def generate_launch_description():
                     'rviz_file': 'view_robots.rviz', # Specify the RViz file for Robots
                     'description_package': LaunchConfiguration("description_package_robot1"),
                     'launch_rviz': LaunchConfiguration("launch_rviz_robot1"), # Pass the declared argument
-                    'launch_gazebo_server_client': PythonExpression(["'false' if '", sim_gazebo, "' == 'true' else 'true'"]),
+                    # gen3.launch should not start Gazebo if dual_launch is managing it (when sim_gazebo or sim_ignition is true for dual_launch)
+                    'launch_gazebo_server_client': PythonExpression(
+                        ["'false' if ('", sim_gazebo, "' == 'true' or '", sim_ignition, "' == 'true') else 'true'"]
+                    ),
                     'gazebo_world_file': LaunchConfiguration("gazebo_world_file"),
                     'headless_rendering': LaunchConfiguration("headless_rendering"),
+                    'managed_by_external_controller': gen3_managed_by_external_controller_setting,
                 }.items()
             ),
             Node(
@@ -226,7 +254,7 @@ def generate_launch_description():
                     'target_pose_topic': robot1_target_pose_topic,
                     'velocity_command_topic': robot1_velocity_command_topic,
                     # --- Velocity Command Service Parameters ---
-                    'use_service_velocity_command': True,
+                    'use_service_velocity_command': PythonExpression(["'true' if '", use_fake_hardware, "' == 'false' else 'false'"]),
                     'arm_index': 0,
                     'velocity_command_service': '/send_joint_speeds', # Default, but can be explicit
                     # --- Robot Description ---
@@ -236,9 +264,15 @@ def generate_launch_description():
                     'xacro_args': PythonExpression([
                         "'dof:=6 use_fake_hardware:=",
                         use_fake_hardware,
-                        " robot_ip:=dummy1 prefix:=",
-                        robot1_namespace, # This is the Python string 'robot1'
-                        "/ initial_pose_y:=-0.5 sim_gazebo:=",
+                        " robot_ip:=dummy1 prefix:=", # dummy1 is fine for xacro context if not used for real connection by xacro
+                        robot1_namespace, "/", # Prefix for namespacing in URDF
+                        " initial_pose_x:=", LaunchConfiguration("initial_pose_x_robot1"),
+                        " initial_pose_y:=", LaunchConfiguration("initial_pose_y_robot1"),
+                        " initial_pose_z:=", LaunchConfiguration("initial_pose_z_robot1"),
+                        " initial_pose_roll:=", LaunchConfiguration("initial_pose_roll_robot1"),
+                        " initial_pose_pitch:=", LaunchConfiguration("initial_pose_pitch_robot1"),
+                        " initial_pose_yaw:=", LaunchConfiguration("initial_pose_yaw_robot1"),
+                        " sim_gazebo:=",
                         sim_gazebo, " sim_ignition:=",
                         sim_ignition, " robot_controller:=",
                         robot1_controller_name, "'"
@@ -261,9 +295,9 @@ def generate_launch_description():
                 PythonLaunchDescriptionSource(gen3_launch_file),
                 launch_arguments={
                     'dof': '6',
-                    'use_fake_hardware': use_fake_hardware,
-                    'sim_gazebo': 'false',
-                    'sim_ignition': 'false',
+                    'use_fake_hardware': gen3_use_fake_hardware_setting,
+                    'sim_gazebo': 'false', # Pass the main sim_gazebo flag
+                    'sim_ignition': 'false', # Pass the main sim_ignition flag
                     'use_sim_time': 'false',
                     'robot_ip': 'dummy2', # Use unique dummy IPs if needed, though often not critical for fake_hardware
                     'prefix': f"{robot2_namespace}/", # Pass the prefix argument with a trailing slash
@@ -281,9 +315,13 @@ def generate_launch_description():
                     
                     'description_package': LaunchConfiguration("description_package_robot2"),
                     'launch_rviz': LaunchConfiguration("launch_rviz_robot2"), # Pass the declared argument
-                    'launch_gazebo_server_client': PythonExpression(["'false' if '", sim_gazebo, "' == 'true' else 'true'"]),
+                    # gen3.launch should not start Gazebo if dual_launch is managing it
+                    'launch_gazebo_server_client': PythonExpression(
+                        ["'false' if ('", sim_gazebo, "' == 'true' or '", sim_ignition, "' == 'true') else 'true'"]
+                    ),
                     'gazebo_world_file': LaunchConfiguration("gazebo_world_file"),
                     'headless_rendering': LaunchConfiguration("headless_rendering"),
+                    'managed_by_external_controller': gen3_managed_by_external_controller_setting,
                 }.items()
             ),
             Node(
@@ -316,7 +354,7 @@ def generate_launch_description():
                     'target_pose_topic': robot2_target_pose_topic,
                     'velocity_command_topic': robot2_velocity_command_topic,
                     # --- Velocity Command Service Parameters ---
-                    'use_service_velocity_command': True,
+                    'use_service_velocity_command': PythonExpression(["'true' if '", use_fake_hardware, "' == 'false' else 'false'"]),
                     'arm_index': 1,
                     'velocity_command_service': '/send_joint_speeds', # Default, but can be explicit
                     # --- Robot Description ---
@@ -327,9 +365,15 @@ def generate_launch_description():
                     'xacro_args': PythonExpression([
                         "'dof:=6 use_fake_hardware:=",
                         use_fake_hardware,
-                        " robot_ip:=dummy2 prefix:=",
-                        robot2_namespace, # This is the Python string 'robot2'
-                        "/ initial_pose_y:=-0.5 sim_gazebo:=",
+                        " robot_ip:=dummy2 prefix:=", # dummy2 is fine for xacro context
+                        robot2_namespace, "/", # Prefix for namespacing in URDF
+                        " initial_pose_x:=", LaunchConfiguration("initial_pose_x_robot2"),
+                        " initial_pose_y:=", LaunchConfiguration("initial_pose_y_robot2"),
+                        " initial_pose_z:=", LaunchConfiguration("initial_pose_z_robot2"),
+                        " initial_pose_roll:=", LaunchConfiguration("initial_pose_roll_robot2"),
+                        " initial_pose_pitch:=", LaunchConfiguration("initial_pose_pitch_robot2"),
+                        " initial_pose_yaw:=", LaunchConfiguration("initial_pose_yaw_robot2"),
+                        " sim_gazebo:=",
                         sim_gazebo, " sim_ignition:=",
                         sim_ignition, " robot_controller:=",
                         robot2_controller_name, "'" # Make sure spacing is correct for the final xacro string
@@ -340,6 +384,37 @@ def generate_launch_description():
         ]
     )
     ld.add_action(robot2_group)
+
+    # --- Conditionally launch Kortex Dual Arm Node for real robot control ---
+    def launch_kortex_node_conditionally(context):
+        if LaunchConfiguration('use_fake_hardware').perform(context) == 'false':
+            LogInfo(msg="use_fake_hardware is false. Launching Kortex Dual Arm Node for real robot control.")
+            kortex_dual_arm_node = Node(
+                package=barrier_control_pkg_name,
+                executable='kortex_dual_arm_node', # Ensure this is the correct executable name from setup.py
+                name='kortex_dual_arm_manager',
+                output='screen',
+                parameters=[
+                    {'robot_ips': [
+                        LaunchConfiguration('robot1_ip_real').perform(context), 
+                        LaunchConfiguration('robot2_ip_real').perform(context)
+                    ]},
+                    {'robot_ports': [10000, 10000]}, # Default Kortex ports, can be parameterized if needed
+                    {'robot_0_username': 'admin'}, # Can be parameterized
+                    {'robot_0_password': 'admin'}, # Can be parameterized
+                    {'robot_1_username': 'admin'}, # Can be parameterized
+                    {'robot_1_password': 'admin'}, # Can be parameterized
+                    {'robot1_joint_names': [f'{robot1_namespace}/joint_{i+1}' for i in range(6)]},
+                    {'robot2_joint_names': [f'{robot2_namespace}/joint_{i+1}' for i in range(6)]},
+                    {'joint_state_publish_rate': 50.0} # Can be parameterized
+                ]
+            )
+            return [kortex_dual_arm_node]
+        else:
+            LogInfo(msg="use_fake_hardware is true. Skipping Kortex Dual Arm Node launch.")
+            return []
+
+    ld.add_action(OpaqueFunction(function=launch_kortex_node_conditionally))
 
     # --- Gazebo Simulation ---
     # This OpaqueFunction allows us to conditionally add Gazebo-related nodes
