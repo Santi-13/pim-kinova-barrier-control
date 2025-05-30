@@ -225,6 +225,10 @@ def generate_launch_description():
                     'joint_state_topic': robot1_joint_state_topic,
                     'target_pose_topic': robot1_target_pose_topic,
                     'velocity_command_topic': robot1_velocity_command_topic,
+                    # --- Velocity Command Service Parameters ---
+                    'use_service_velocity_command': True,
+                    'arm_index': 0,
+                    'velocity_command_service': '/send_joint_speeds', # Default, but can be explicit
                     # --- Robot Description ---
                     'robot_description_package': 'kortex_description', # Your robot description package
                     'robot_description_xacro_path': 'robots/gen3.xacro', # Relative path within the package
@@ -311,6 +315,10 @@ def generate_launch_description():
                     'joint_state_topic': robot2_joint_state_topic,
                     'target_pose_topic': robot2_target_pose_topic,
                     'velocity_command_topic': robot2_velocity_command_topic,
+                    # --- Velocity Command Service Parameters ---
+                    'use_service_velocity_command': True,
+                    'arm_index': 1,
+                    'velocity_command_service': '/send_joint_speeds', # Default, but can be explicit
                     # --- Robot Description ---
                     'robot_description_package': 'kortex_description', # Your robot description package
                     'robot_description_xacro_path': 'robots/gen3.xacro', # Relative path within the package

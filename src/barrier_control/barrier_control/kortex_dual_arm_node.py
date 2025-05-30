@@ -1,17 +1,13 @@
 #!/usr/bin/env python3
 import rclpy
 from rclpy.node import Node
-import sys
-import time # Keep time for direct Kortex API usage if needed
 
 from .dual_robot_connection import KinovaDualArmController 
 
-from service_interface.srv import SendJointSpeeds  # Import your custom service type
-# For now, let's define a placeholder if the custom service isn't built yet
-# To make this runnable without building the custom service immediately,
-# we'll describe its structure and how it would be used.
-# When you build the srv, uncomment the import above and use SendJointSpeeds.Request and SendJointSpeeds.Response
+from service_interface.srv import SendJointSpeeds
+from sensor_msgs.msg import JointState
 
+import math
 
 class KortexDualArmNode(Node):
     def __init__(self):
@@ -27,6 +23,14 @@ class KortexDualArmNode(Node):
         self.declare_parameter('robot_1_username', 'admin')
         self.declare_parameter('robot_1_password', 'admin')
 
+        # Joint names for each arm ( crucial for sensor_msgs/JointState)
+        default_robot1_joint_names = ['robot1/joint_1', 'robot1/joint_2', 'robot1/joint_3', 'robot1/joint_4', 'robot1/joint_5', 'robot1/joint_6']
+        default_robot2_joint_names = ['robot2/joint_1', 'robot2/joint_2', 'robot2/joint_3', 'robot2/joint_4', 'robot2/joint_5', 'robot2/joint_6']
+
+        self.declare_parameter('robot1_joint_names', default_robot1_joint_names)
+        self.declare_parameter('robot2_joint_names', default_robot2_joint_names)
+        self.declare_parameter('joint_state_publish_rate', 50.0) # Hz
+
         # Get parameter values
         ips = self.get_parameter('robot_ips').get_parameter_value().string_array_value
         ports = self.get_parameter('robot_ports').get_parameter_value().integer_array_value
@@ -37,6 +41,16 @@ class KortexDualArmNode(Node):
             (self.get_parameter('robot_1_username').get_parameter_value().string_value,
              self.get_parameter('robot_1_password').get_parameter_value().string_value)
         ]
+
+        self.arm_joint_names = [
+            self.get_parameter('robot1_joint_names').get_parameter_value().string_array_value,
+            self.get_parameter('robot2_joint_names').get_parameter_value().string_array_value
+        ]
+
+        self.publish_rate = self.get_parameter('joint_state_publish_rate').get_parameter_value().double_value
+        self.publish_timer_period = 1.0 / self.publish_rate if self.publish_rate > 0 else 0.02 # seconds
+
+        self.dual_arm_controller = None # Initialize to None
 
         if len(ips) != 2 or len(ports) != 2:
             self.get_logger().fatal("Configuration error: Requires exactly 2 IP addresses and ports.")
@@ -64,13 +78,25 @@ class KortexDualArmNode(Node):
         if self.dual_arm_controller:
             rclpy.get_default_context().on_shutdown(self._node_shutdown)
 
-            # Create the service server for sending joint speeds
-            self.send_speeds_service = self.create_service(
-                SendJointSpeeds, # Use the imported service type
-                'send_joint_speeds', # This will be the service name (e.g., /send_joint_speeds)
-                self.send_joint_speeds_callback
-            )
-            self.get_logger().info("Service '/send_joint_speeds' is ready.")
+            # Create Service Server for SendJointSpeeds
+            try:
+                self.send_speeds_service = self.create_service(
+                    SendJointSpeeds,
+                    'send_joint_speeds',
+                    self.send_joint_speeds_callback
+                )
+                self.get_logger().info("Service '/send_joint_speeds' is ready.")
+            except Exception as e: # More specific exceptions could be useful here
+                self.get_logger().error(f"Failed to create service 'send_joint_speeds': {e}")
+
+            # Create Publishers for Joint States
+            self.joint_state_pub_robot1 = self.create_publisher(JointState, 'robot1/joint_states', 10)
+            self.joint_state_pub_robot2 = self.create_publisher(JointState, 'robot2/joint_states', 10)
+            self.joint_state_pubs = [self.joint_state_pub_robot1, self.joint_state_pub_robot2]
+            self.get_logger().info(f"Publishing joint states to '/robot1/joint_states' and '/robot2/joint_states' at {self.publish_rate} Hz.")
+
+            # Create Timer for publishing joint states
+            self.joint_state_timer = self.create_timer(self.publish_timer_period, self.publish_joint_states_callback)
         else:
             self.get_logger().error("Dual arm controller not initialized. Service '/send_joint_speeds' will not be available.")
 
@@ -136,6 +162,60 @@ class KortexDualArmNode(Node):
         
         return response
 
+    def publish_joint_states_callback(self):
+        """
+        Called by a timer to fetch and publish real-time joint states for both arms.
+        """
+        if not self.dual_arm_controller:
+            # self.get_logger().warn("Dual arm controller not initialized. Cannot publish joint states.", throttle_duration_sec=5)
+            return
+
+        for arm_idx in range(len(self.dual_arm_controller.arms)):
+            try:
+                arm_base_cyclic_client = self.dual_arm_controller.arms[arm_idx]['base_cyclic']
+                feedback = arm_base_cyclic_client.RefreshFeedback()
+
+                if not feedback.actuators:
+                    # self.get_logger().warn(f"No actuator data in feedback for arm {arm_idx}.", throttle_duration_sec=5)
+                    continue
+
+                joint_state_msg = JointState()
+                joint_state_msg.header.stamp = self.get_clock().now().to_msg()
+                
+                num_joints_from_param = len(self.arm_joint_names[arm_idx])
+                num_actuators_feedback = len(feedback.actuators)
+
+                # Ensure we have names for the joints we get feedback for, or truncate
+                max_joints_to_publish = min(num_joints_from_param, num_actuators_feedback)
+                
+                joint_state_msg.name = self.arm_joint_names[arm_idx][:max_joints_to_publish]
+                joint_state_msg.position = []
+                joint_state_msg.velocity = []
+                joint_state_msg.effort = [] # Kortex calls it torque
+
+                for i in range(max_joints_to_publish):
+                    actuator = feedback.actuators[i]
+                    # Assuming actuator_id corresponds to index i+1, and names are ordered 1 to N
+                    joint_state_msg.position.append(math.radians(actuator.position)) # Convert deg to rad
+                    joint_state_msg.velocity.append(math.radians(actuator.velocity)) # Convert deg/s to rad/s
+                    joint_state_msg.effort.append(actuator.torque) # Nm
+
+                if max_joints_to_publish < num_actuators_feedback and arm_idx == 0: # Log only once per type of message
+                     self.get_logger().warn(
+                        f"Arm {arm_idx}: Feedback has {num_actuators_feedback} actuators, "
+                        f"but only {max_joints_to_publish} joint names are configured. Truncating.",
+                        throttle_duration_sec=10)
+                elif max_joints_to_publish < num_joints_from_param and arm_idx == 0:
+                     self.get_logger().warn(
+                        f"Arm {arm_idx}: {num_joints_from_param} joint names configured, "
+                        f"but only received feedback for {max_joints_to_publish} actuators. Publishing available.",
+                        throttle_duration_sec=10)
+
+
+                self.joint_state_pubs[arm_idx].publish(joint_state_msg)
+
+            except Exception as e:
+                self.get_logger().error(f"Error publishing joint states for arm {arm_idx}: {e}", throttle_duration_sec=5)
 
 def main(args=None):
     rclpy.init(args=args)

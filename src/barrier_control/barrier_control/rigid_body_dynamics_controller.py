@@ -6,8 +6,7 @@ from rclpy.node import Node
 import tf2_ros
 import subprocess # For running xacro command
 import os # For path joining
-import quaternion
-import tf2_geometry_msgs # Required for transforming geometry_msgs types if needed
+
 from geometry_msgs.msg import TransformStamped, PoseStamped
 from std_msgs.msg import Float64MultiArray
 from rclpy.duration import Duration
@@ -15,6 +14,8 @@ from sensor_msgs.msg import JointState
 from ament_index_python.packages import get_package_share_directory
 from scipy.spatial.transform import Rotation as R_scipy # For Euler to Quaternion conversion
 import tempfile # For creating temporary files
+
+from service_interface.srv import SendJointSpeeds 
 
 class RigidBodyDynamicsController(Node):
     """
@@ -32,6 +33,9 @@ class RigidBodyDynamicsController(Node):
         self.declare_parameter('joint_state_topic', '/joint_states')
         self.declare_parameter('target_pose_topic', '/target_pose')
         self.declare_parameter('velocity_command_topic', '/joint_group_velocity_controller/commands')
+        self.declare_parameter('velocity_command_service', '/send_joint_speeds')
+        self.declare_parameter('use_service_velocity_command', False) 
+        self.declare_parameter('arm_index', 0)
         self.declare_parameter('robot_description_package', 'kortex_description')
         self.declare_parameter('robot_description_xacro_path', 'robots/gen3.xacro')
         self.declare_parameter('xacro_args', 'dof:=6 use_fake_hardware:=true robot_ip:=dummy')
@@ -53,6 +57,7 @@ class RigidBodyDynamicsController(Node):
         joint_state_topic = self.get_parameter('joint_state_topic').value
         target_pose_topic = self.get_parameter('target_pose_topic').value
         velocity_command_topic = self.get_parameter('velocity_command_topic').value
+        velocity_command_service = self.get_parameter('velocity_command_service').value
         self.jacobian_damping = self.get_parameter('jacobian_damping').value
         self.max_joint_velocities_np = np.array(self.get_parameter('max_joint_velocities').value)
         self.control_frequency = self.get_parameter('control_frequency').value
@@ -60,6 +65,9 @@ class RigidBodyDynamicsController(Node):
         self.joint_limit_buffer_val = self.get_parameter('joint_limit_buffer').value
         self.error_tolerance_np = np.array(self.get_parameter('error_tolerance').value)
         self.euler_input_convention = self.get_parameter('euler_input_convention').value.lower()
+        self.use_service_command = self.get_parameter('use_service_velocity_command').value
+        self.arm_index_for_service = self.get_parameter('arm_index').value
+        self.velocity_command_service_name = self.get_parameter('velocity_command_service').value
 
         # --- ---
 
@@ -96,6 +104,18 @@ class RigidBodyDynamicsController(Node):
             Float64MultiArray,
             velocity_command_topic, # Target controller topic
             10)
+        
+        ### Service Client for Joint Speeds
+        if self.use_service_command:
+            self.joint_speeds_service_client = self.create_client(SendJointSpeeds, self.velocity_command_service_name)
+            self._service_not_ready_logged_once = False # For logging service readiness
+            self.get_logger().info(f"Service client for SendJointSpeeds created for service '{self.velocity_command_service_name}'.")
+        else:
+            self.joint_speeds_service_client = None
+            self.get_logger().info("Sending joint speeds via service is disabled by parameter 'use_service_velocity_command'.")
+
+        # Future for async service call
+        self.future = None
 
         ### Load robot model at initialization
         self.load_robot()
@@ -442,9 +462,68 @@ class RigidBodyDynamicsController(Node):
         except Exception as e:
             self.get_logger().error(f"Error calculating/limiting joint velocities: {e}")
             return None
+        
+    def send_joint_speeds_via_service(self, joint_velocities_rad_s: np.ndarray):
+        """Sends joint velocities (rad/s) via the SendJointSpeeds service."""
+        if not self.use_service_command or self.joint_speeds_service_client is None:
+            return
+
+        if len(joint_velocities_rad_s) != 6:
+            self.get_logger().error(
+                f"Cannot send joint speeds via service: expected 6 velocities, got {len(joint_velocities_rad_s)}. "
+                f"Ensure 'controlled_joint_names' matches a 6-DOF robot for this service.",
+                throttle_duration_sec=5
+            )
+            return
+
+        if not self.joint_speeds_service_client.service_is_ready():
+            if not self._service_not_ready_logged_once: # Log only once if not ready
+                self.get_logger().warn(
+                    f"Service '{self.joint_speeds_service_client.srv_name}' not available. Cannot send joint speeds.",
+                )
+                self._service_not_ready_logged_once = True
+            return
+        self._service_not_ready_logged_once = False # Reset if ready
+
+        # Convert rad/s to deg/s
+        joint_velocities_deg_s = joint_velocities_rad_s * (180.0 / np.pi)
+
+        # Example Kortex API limit (from KinovaDualArmController) for user awareness
+        kortex_api_deg_s_limit = 20.0 
+        if any(abs(v) > kortex_api_deg_s_limit for v in joint_velocities_deg_s):
+            self.get_logger().warn(
+                f"Calculated joint speeds {['{:.2f}'.format(v) for v in joint_velocities_deg_s]} (deg/s) exceed the "
+                f"example Kortex API limit of {kortex_api_deg_s_limit} deg/s. "
+                f"Command will be sent, but might be rejected or capped by the robot/service.",
+                throttle_duration_sec=10
+            )
+
+        request = SendJointSpeeds.Request()
+        request.arm_index = self.arm_index_for_service
+        request.joint_speeds = joint_velocities_deg_s.tolist()
+        request.duration = 1.0 / self.control_frequency # Duration for one control cycle
+        request.control_frequency = int(self.control_frequency) # Kortex API internal frequency
+
+        self.future = self.joint_speeds_service_client.call_async(request)
+        self.future.add_done_callback(self.joint_speeds_service_response_callback)
+        self.get_logger().debug(f"Sent joint speeds to service for arm {request.arm_index}: {['{:.2f}'.format(v) for v in request.joint_speeds]} deg/s, duration {request.duration:.3f}s, freq {request.control_frequency}Hz")
+
+    def joint_speeds_service_response_callback(self, future):
+        """Callback for the SendJointSpeeds service response."""
+        try:
+            response = future.result()
+            if response.success:
+                self.get_logger().debug(f"Service call SendJointSpeeds successful: {response.message}")
+            else:
+                self.get_logger().warn(f"Service call SendJointSpeeds failed: {response.message}")
+        except Exception as e:
+            self.get_logger().error(f"Exception during SendJointSpeeds service call: {e}")
+
 
     def publish_velocities(self, velocities: np.ndarray | None):
         """Publishes the calculated joint velocities."""
+        final_velocities_to_publish: np.ndarray
+
         if velocities is None:
             # If calculation failed, publish zeros as a safety measure
         
@@ -454,11 +533,16 @@ class RigidBodyDynamicsController(Node):
             elif self.num_model_joints > 0: # Fallback to model DoF
                 num_publish_joints = self.num_model_joints
             # self.get_logger().warn(f"Velocities are None, publishing zeros for {num_publish_joints} joints.")
-            velocities = np.zeros(num_publish_joints)
+            final_velocities_to_publish = np.zeros(num_publish_joints)
+        else:
+            final_velocities_to_publish = velocities
 
         msg = Float64MultiArray()
-        msg.data = velocities.tolist()
+        msg.data = final_velocities_to_publish.tolist()
         self.velocity_pub.publish(msg)
+
+        # Also send via service if enabled and conditions met
+        self.send_joint_speeds_via_service(final_velocities_to_publish)
 
     def control_loop_callback(self):
         """Main control loop executed at a fixed frequency."""

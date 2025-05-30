@@ -469,13 +469,13 @@ if __name__ == "__main__":
             #     [[360, 0, 0, 360, 360, 360], [360, 0, 0, 360, 360, 360]]
             # )
 
-            # dual_arm.send_joint_speeds(
-            #                             arm_index=0,
-            #                             # joint_speeds=[10.0, 10.0, 10.0, 0.0, 0.0, 0.0],
-            #                             joint_speeds = [20.0, -5.0, 0.0, 0.0, 0.0, 0.0],
-            #                             duration=5.0,
-            #                             control_frequency=100
-            #                           )
+            dual_arm.send_joint_speeds(
+                                        arm_index=0,
+                                        # joint_speeds=[10.0, 10.0, 10.0, 0.0, 0.0, 0.0],
+                                        joint_speeds = [20.0, -5.0, 0.0, 0.0, 0.0, 0.0],
+                                        duration=5.0,
+                                        control_frequency=100
+                                      )
             
             
             
