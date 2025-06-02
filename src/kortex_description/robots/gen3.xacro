@@ -39,7 +39,7 @@
     <xacro:arg name="initial_positions_file" default="$(find kortex_description)/config/initial_positions.yaml"/>
     <!-- convert to property to use substitution in function -->
     <xacro:property name="initial_positions_file" default="$(arg initial_positions_file)"/>
-    <link name="world" />
+    <link name="world"/>
     <xacro:load_robot
         parent="world"
         arm="$(arg arm)"

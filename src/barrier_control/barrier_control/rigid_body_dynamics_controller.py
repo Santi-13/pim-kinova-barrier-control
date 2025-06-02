@@ -63,7 +63,7 @@ class RigidBodyDynamicsController(Node):
         self.max_joint_velocities_np = np.array(self.get_parameter('max_joint_velocities').value)
         self.control_frequency = self.get_parameter('control_frequency').value
         self.controlled_joint_names = self.get_parameter('controlled_joint_names').value
-        self.joint_limit_buffer_fval = self.get_parameter('joint_limit_buffer').value
+        self.joint_limit_buffer_val = self.get_parameter('joint_limit_buffer').value
         self.error_tolerance_np = np.array(self.get_parameter('error_tolerance').value)
         self.euler_input_convention = self.get_parameter('euler_input_convention').value.lower()
         # Convert the string parameter to boolean for use_service_command
@@ -401,6 +401,70 @@ class RigidBodyDynamicsController(Node):
             self.get_logger().error(f"Error calculating Jacobian: {e}")
             return None
         
+    def calculate_gravity_torques(self) -> np.ndarray | None:
+        """Calculates the joint torques required to counteract gravity."""
+        try:
+            if self.robot is None:
+                self.get_logger().warn("Robot model not loaded yet. Skipping gravity torque calculation.")
+                return None            
+            if self.current_joint_positions is None:
+                self.get_logger().warn("Joint positions not yet received. Skipping gravity torque calculation.")
+                return None
+
+            # Add this check for None within the list/array:
+            if any(p is None for p in self.current_joint_positions):
+                self.get_logger().error(f"current_joint_positions contains None values: {self.current_joint_positions}. Skipping gravity torque calculation.")
+                return None
+
+            if self.robot:
+                self.get_logger().info(f"Robot's configured gravity vector (self.robot.gravity): {self.robot.gravity}")
+                self.get_logger().info(f"Number of joints (self.robot.n): {self.robot.n}")
+                self.get_logger().info(f"Number of links (len(self.robot.links)): {len(self.robot.links)}")
+            else:
+                self.get_logger().warn("self.robot is None, cannot check gravity vector.")
+            
+                
+            # Attempt to create q_np and log it
+            try:
+                if self.robot and self.robot.links:
+                    self.get_logger().info("Inspecting robot link dynamic parameters:")
+                    for i, link in enumerate(self.robot.links):
+                        link_name = link.name if hasattr(link, 'name') else f"Link {i}"
+                        mass = link.m if hasattr(link, 'm') else "N/A"
+                        com = link.r if hasattr(link, 'r') else "N/A" # Center of Mass vector
+                        self.get_logger().info(f"  {link_name}: mass (m) = {mass}, CoM (r) = {com}")
+                else:
+                    self.get_logger().warn("Cannot inspect links: self.robot or self.robot.links is not available.")
+                # Force dtype to float; this will error if None is present and cannot be converted to NaN implicitly by some np versions
+                q_np = np.array(self.current_joint_positions, dtype=float) 
+                self.get_logger().info(f"Input to gravload: q_np = {q_np}, type = {type(q_np)}, dtype = {q_np.dtype}") # IMPORTANT LOG
+            except ValueError as ve:
+                self.get_logger().error(f"ValueError when creating q_np from current_joint_positions ({self.current_joint_positions}): {ve}. Skipping gravity torque calculation.")
+                return None
+            # self.get_logger().info("Current Joint Positions type: " + str(type(self.current_joint_positions)))
+            # self.get_logger().info("Current joint positions for gravity torque calculation: ")
+            # self.get_logger().info(self.current_joint_positions)
+            try:
+                q_zero = np.zeros(self.num_model_joints, dtype=float)
+                self.get_logger().info(f"Testing gravload with zero config: {q_zero}")
+                test_grav_torques = self.robot.gravload(q_zero)
+                self.get_logger().info(f"Test gravload with zero config successful: {test_grav_torques}")
+            except Exception as e_test:
+                self.get_logger().error(f"Test gravload with zero config FAILED: {e_test}")
+            
+            gravity_torques = self.robot.gravload(q_np) # Returns an N-element numpy array
+
+            if gravity_torques.shape[0] == self.num_model_joints:
+                self.get_logger().debug(f"Gravity torques calculated: {gravity_torques}")
+                return gravity_torques
+            else:
+                self.get_logger().error(f"Gravity torques shape mismatch: {gravity_torques.shape}, expected ({self.num_model_joints},)")
+                return None
+        except Exception as e:
+            self.get_logger().error(f"Error calculating gravity torques: {e}")
+            return None
+
+        
     def calculate_and_limit_joint_velocities(self, jacobian: np.ndarray, pose_error: np.ndarray) -> np.ndarray | None:
         """Calculates and limits joint velocities based on Jacobian, pose error, and current joint velocities (for Kd term)."""
         try:
@@ -408,49 +472,87 @@ class RigidBodyDynamicsController(Node):
             if jacobian is None:
                 self.get_logger().warn("Jacobian not available for velocity calculation.")
                 return None
-            if pose_error is None: # Should generally not happen if called correctly
+            if pose_error is None: 
                 self.get_logger().warn("Pose Error not available for velocity calculation.")
                 return None
             if self.current_joint_velocities is None:
                 self.get_logger().warn("Current joint velocities not available for velocity calculation (Kd term).")
                 return None
+            if self.robot is None: # Needed for B(q)
+                self.get_logger().warn("Robot model not loaded. Skipping gravity compensation part of velocity calculation.")
+                # Proceed without gravity compensation if robot model isn't ready for it
+            if self.current_joint_positions is None: # Needed for G(q) and B(q)
+                self.get_logger().warn("Current joint positions not available. Skipping gravity compensation part of velocity calculation.")
 
-            # --- Calculate desired end-effector velocity (proportional control) ---
+            # --- Calculate desired end-effector velocity (proportional-derivative control) ---
             pose_error_np = pose_error.reshape(-1, 1)
 
             # --- Calculate current end-effector velocity (for derivative term) ---
             q_dot_current = self.current_joint_velocities.reshape(-1, 1)
             v_current = jacobian @ q_dot_current
-
-            # --- Combine P and D terms for desired EE velocity ---
-            # v_desired_pd = self.kp @ pose_error_np - self.kd @ v_current
             v_desired_pd = self.kp @ pose_error_np.reshape(6,1) - self.kd @ v_current.reshape(6,1)
-
             self.get_logger().debug(f"v_desired: {v_desired_pd.flatten()}")
 
             # --- Calculate joint velocities using Damped Least Squares (DLS) ---
             J_dls = jacobian.T @ np.linalg.inv(jacobian @ jacobian.T + self.jacobian_damping**2 * np.eye(6)) # DLS formula
-            joint_velocities_raw = J_dls @ v_desired_pd
+            q_dot_kinematic = (J_dls @ v_desired_pd).flatten() # Ensure it's 1D array
+            self.get_logger().debug(f"q_dot_kinematic (before grav comp): {q_dot_kinematic}")
 
-            # --- Or using standard Pseudo-Inverse ---
-            # J_pseudo_inverse = np.linalg.pinv(jacobian)
-            # joint_velocities_raw = J_pseudo_inverse @ v_desired_pd # Use PD desired velocity
+            # --- Gravity Compensation Term Calculation ---
+            gravity_comp_velocity_adjustment = np.zeros_like(q_dot_kinematic) # Default to no adjustment
+            
+            # Only attempt if robot model and current positions are available
+            if self.robot is not None and self.current_joint_positions is not None:
+                q_np = np.array(self.current_joint_positions)
+                try:
+                    # G_q is the torque vector to counteract gravity
+                    G_q = self.calculate_gravity_torques() # This calls self.robot.gravload(q_np)
 
-            # --- Velocity Limiting ---
-            joint_velocities_limited = np.clip(joint_velocities_raw.flatten(), -self.max_joint_velocities_np, self.max_joint_velocities_np)
+                    if G_q is not None:
+                        B_q = self.robot.inertia(q_np)   # Joint-space inertia matrix B(q)
+                        
+                        # Acceleration to counteract gravity: B(q) * q_ddot_comp = G(q)
+                        # So, q_ddot_comp = B(q)^-1 * G(q)
+                        q_ddot_gravity_compensation = np.linalg.solve(B_q, G_q)
+                        
+                        # Velocity adjustment over one control period dt
+                        dt = 1.0 / self.control_frequency 
+                        gravity_comp_velocity_adjustment = q_ddot_gravity_compensation * dt
+                        
+                        self.get_logger().debug(f"G(q): {G_q}")
+                        # self.get_logger().debug(f"B(q) shape: {B_q.shape}") # B(q) can be large
+                        self.get_logger().debug(f"q_ddot_for_gravity_comp: {q_ddot_gravity_compensation}")
+                        self.get_logger().debug(f"Gravity comp velocity adjustment: {gravity_comp_velocity_adjustment}")
+                    else:
+                        self.get_logger().warn("Failed to calculate G(q), skipping gravity velocity adjustment.")
+                except np.linalg.LinAlgError as e:
+                    self.get_logger().warn(f"LinAlgError during gravity compensation term calculation (e.g., B(q) singular): {e}. Using zero adjustment.")
+                except Exception as e:
+                    self.get_logger().error(f"Unexpected exception during gravity compensation term calculation: {e}. Using zero adjustment.")
+            
+            # Add gravity compensation adjustment to kinematic velocities
+            # The logic is: q_dot_final = q_dot_kinematic + (B(q)^-1 * G(q)) * dt
+            # G(q) is torque to *counteract* gravity. So B(q)^-1 * G(q) is accel *to counteract* gravity.
+            # We add this because q_dot_kinematic doesn't know about gravity. This term helps "boost" it.
+            joint_velocities_with_gravity_comp = q_dot_kinematic + gravity_comp_velocity_adjustment
+            self.get_logger().debug(f"q_dot with gravity comp: {joint_velocities_with_gravity_comp}")
 
-            # --- Joint Position Limit Handling ---
+
+            # --- Velocity Limiting (apply to the compensated velocities) ---
+            # Ensure joint_velocities_with_gravity_comp is also flattened if it became 2D
+            joint_velocities_limited = np.clip(joint_velocities_with_gravity_comp.flatten(), 
+                                               -self.max_joint_velocities_np, 
+                                               self.max_joint_velocities_np)
+
+            # --- Joint Position Limit Handling (applied to already velocity-limited commands) ---
             if self.joint_position_limits is not None and \
                self.current_joint_positions is not None and \
-               len(joint_velocities_limited) == self.num_model_joints: # Ensure consistent length
+               len(joint_velocities_limited) == self.num_model_joints:
                 
-                # Make a copy to modify based on position limits
                 velocities_after_pos_limits = np.copy(joint_velocities_limited) 
-
                 for i in range(self.num_model_joints):
                     q_i = self.current_joint_positions[i]
                     v_i = velocities_after_pos_limits[i] 
-
                     q_min_i = self.joint_position_limits[0, i]
                     q_max_i = self.joint_position_limits[1, i]
                     
@@ -460,9 +562,14 @@ class RigidBodyDynamicsController(Node):
                     elif q_i >= (q_max_i - self.joint_limit_buffer_val) and v_i > 0:
                         self.get_logger().debug(f"Joint {self.controlled_joint_names[i]} ({i}) near upper limit (q={q_i:.3f} vs lim={q_max_i:.3f}, buff={self.joint_limit_buffer_val:.3f}) with v={v_i:.3f}. Clamping v to 0.")
                         velocities_after_pos_limits[i] = 0.0
-                joint_velocities_limited = velocities_after_pos_limits # Assign back the potentially modified velocities
-            self.get_logger().debug(f"Raw Vels: {joint_velocities_raw.flatten()}, Final Limited Vels: {joint_velocities_limited}")
-            return joint_velocities_limited # Return the final limited velocities
+                joint_velocities_limited = velocities_after_pos_limits
+            
+            self.get_logger().debug(f"Final Joint Velocities to publish: {joint_velocities_limited}")
+            return joint_velocities_limited
+        
+        except Exception as e:
+            self.get_logger().error(f"General error in calculate_and_limit_joint_velocities: {e}")
+            return None
         
 
         except Exception as e:
@@ -528,20 +635,11 @@ class RigidBodyDynamicsController(Node):
 
     def publish_velocities(self, velocities: np.ndarray | None):
         """Publishes the calculated joint velocities."""
-        final_velocities_to_publish: np.ndarray
-
+        # This method is now only called when 'velocities' is a valid command.
         if velocities is None:
-            # If calculation failed, publish zeros as a safety measure
-        
-            num_publish_joints = 0
-            if self.controlled_joint_names: # Prioritize controlled_joint_names if available
-                num_publish_joints = len(self.controlled_joint_names)
-            elif self.num_model_joints > 0: # Fallback to model DoF
-                num_publish_joints = self.num_model_joints
-            # self.get_logger().warn(f"Velocities are None, publishing zeros for {num_publish_joints} joints.")
-            final_velocities_to_publish = np.zeros(num_publish_joints)
-        else:
-            final_velocities_to_publish = velocities
+            self.get_logger().error("publish_velocities called with None, this should not happen with the new logic. No command sent.")
+            return
+        final_velocities_to_publish = velocities
 
         if self.use_service_command:
             # Send via service if enabled
@@ -555,42 +653,41 @@ class RigidBodyDynamicsController(Node):
     def control_loop_callback(self):
         """Main control loop executed at a fixed frequency."""
         if self.active_target_pose is None:
-            # No active target, ensure robot stops
-            self.publish_velocities(None)
+            # No active target, do not send any commands.
+            # self.get_logger().debug("No active target pose. Controller is idle.", throttle_duration_sec=5)
             return
 
         # Check prerequisites
         if self.robot is None or self.current_joint_positions is None or self.current_joint_velocities is None:
             self.get_logger().warn("Robot model or joint states not ready. Skipping control loop iteration.", throttle_duration_sec=5)
-            self.publish_velocities(None) # Publish zeros
             return
 
         current_pose = self.get_current_pose_from_tf()
         if current_pose is None:
             self.get_logger().warn("Could not get current pose. Skipping control loop iteration.", throttle_duration_sec=5)
-            self.publish_velocities(None) # Publish zeros
             return
         
         # Calculate error
         self.pose_error = self.calculate_pose_error(current_pose, self.active_target_pose)
         self.get_logger().debug(f'6D Pose error: {self.pose_error}')
 
-        # Check if target is reached
+        # Check if target is reached within tolerance
         if np.all(np.abs(self.pose_error) < self.error_tolerance_np):
-            num_zero_vel_joints = 0
-            if self.controlled_joint_names:
-                num_zero_vel_joints = len(self.controlled_joint_names)
-            elif self.num_model_joints > 0:
-                num_zero_vel_joints = self.num_model_joints
-            self.get_logger().info(f"Target reached within tolerance. Pose error: {self.pose_error}. Publishing zero velocities for {num_zero_vel_joints} joints.")
-            self.publish_velocities(np.zeros(num_zero_vel_joints)) # Publish zero velocity
-
+            self.get_logger().info(f"Target reached within tolerance. Pose error: {self.pose_error}. Controller is now idle.")
             self.active_target_pose = None # Deactivate target until a new one arrives
-            return # Exit the control loop for this cycle
+            return # Stop sending commands
 
         # --- If target not reached, calculate and publish velocities ---
         jacobian = self.calculate_jacobian()
+        if jacobian is None:
+            self.get_logger().warn("Jacobian calculation failed. Skipping velocity command.", throttle_duration_sec=5)
+            return
+            
         joint_velocities = self.calculate_and_limit_joint_velocities(jacobian, self.pose_error)
+        if joint_velocities is None:
+            self.get_logger().warn("Joint velocity calculation failed. Skipping velocity command.", throttle_duration_sec=5)
+            return
+            
         self.publish_velocities(joint_velocities)
 
 def main():

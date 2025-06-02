@@ -17,7 +17,9 @@ def generate_launch_description():
         )
     )
     declared_arguments.append(
-        DeclareLaunchArgument("launch_rviz_robot2", default_value="false", description="Launch RViz for Robot 2.")
+        DeclareLaunchArgument("launch_rviz_robot2", 
+                              default_value="false", 
+                              description="Launch RViz for Robot 2.")
     )
     declared_arguments.append(
         DeclareLaunchArgument(
@@ -154,7 +156,7 @@ def generate_launch_description():
 
     # --- Robot 1 Configuration ---
     robot1_namespace = 'robot1'
-    robot1_controller_name = 'robot1_controller'
+    robot1_controller_name = 'joint_trajectory_controller'
     robot1_controller_file = 'robot1_controllers.yaml'
     robot1_target_pose_topic = 'target_pose' # Relative topic name within namespace
     robot1_joint_state_topic = 'joint_states' # Relative topic name within namespace
@@ -176,8 +178,8 @@ def generate_launch_description():
 
     # --- Robot 2 Configuration ---
     robot2_namespace = 'robot2'
-    robot2_controller_name = 'robot2_controller'
-    robot2_controller_file = 'robot2_controllers.yaml'
+    robot2_controller_name = 'joint_trajectory_controller'
+    robot2_controller_file = 'ros2_controllers.yaml'
     robot2_target_pose_topic = 'target_pose' # Can be the same relative name
     robot2_joint_state_topic = 'joint_states' # Can be the same relative name
     robot2_velocity_command_topic = 'robot2_controllers/commands' # Can be the same relative name
@@ -185,243 +187,243 @@ def generate_launch_description():
     # --- Create Launch Description ---
     ld = LaunchDescription(declared_arguments)
 
-    # --- Robot 1 Group ---    
-    robot1_group = GroupAction(
-        actions=[
-            # Push the namespace for all nodes/includes within this group
-            PushRosNamespace(robot1_namespace),
-
-            # Include kortex_bringup for Robot 1
-            IncludeLaunchDescription(
-                PythonLaunchDescriptionSource(gen3_launch_file),
-                launch_arguments={
-                    'dof': '6',
-                    'use_fake_hardware': gen3_use_fake_hardware_setting,
-                    'sim_gazebo': sim_gazebo,
-                    'sim_ignition': sim_ignition,
-                    'use_sim_time': use_sim_time,
-                    'robot_ip': 'dummy1', # Use unique dummy IPs if needed, though often not critical for fake_hardware
-                    'prefix': f"{robot1_namespace}/", # Pass the prefix argument with a trailing slash
-                    'namespace': f"/{robot1_namespace}", # Namespace for the robot
-                    # Initial pose for Robot 1
-                    'initial_pose_x': LaunchConfiguration("initial_pose_x_robot1"),
-                    'initial_pose_y': LaunchConfiguration("initial_pose_y_robot1"),
-                    'initial_pose_z': LaunchConfiguration("initial_pose_z_robot1"),
-                    'initial_pose_roll': LaunchConfiguration("initial_pose_roll_robot1"),
-                    'initial_pose_pitch': LaunchConfiguration("initial_pose_pitch_robot1"),
-                    'initial_pose_yaw': LaunchConfiguration("initial_pose_yaw_robot1"),
-                    'controllers_file': robot1_controller_file,
-                    'robot_controller': 'robot1_controllers', # Specify this controller
-                    'rviz_file': 'view_robots.rviz', # Specify the RViz file for Robots
-                    'description_package': LaunchConfiguration("description_package_robot1"),
-                    'launch_rviz': LaunchConfiguration("launch_rviz_robot1"), # Pass the declared argument
-                    # gen3.launch should not start Gazebo if dual_launch is managing it (when sim_gazebo or sim_ignition is true for dual_launch)
-                    'launch_gazebo_server_client': PythonExpression(
-                        ["'false' if ('", sim_gazebo, "' == 'true' or '", sim_ignition, "' == 'true') else 'true'"]
-                    ),
-                    'gazebo_world_file': LaunchConfiguration("gazebo_world_file"),
-                    'headless_rendering': LaunchConfiguration("headless_rendering"),
-                    'managed_by_external_controller': gen3_managed_by_external_controller_setting,
-                }.items()
-            )
-            
-        ]
-    )
-    ld.add_action(robot1_group)
     
-    # --- Robot 2 Group ---
-    robot2_group = GroupAction(
-        actions=[
-            # Push the namespace for all nodes/includes within this group
-            PushRosNamespace(robot2_namespace),
-
-            # Include kortex_bringup for Robot 1
-            IncludeLaunchDescription(
-                PythonLaunchDescriptionSource(gen3_launch_file),
-                launch_arguments={
-                    'dof': '6',
-                    'use_fake_hardware': gen3_use_fake_hardware_setting,
-                    'sim_gazebo': 'false', # Pass the main sim_gazebo flag
-                    'sim_ignition': 'false', # Pass the main sim_ignition flag
-                    'use_sim_time': 'false',
-                    'robot_ip': 'dummy2', # Use unique dummy IPs if needed, though often not critical for fake_hardware
-                    'prefix': f"{robot2_namespace}/", # Pass the prefix argument with a trailing slash
-                    'namespace': f"/{robot2_namespace}", # Namespace for the robot
-                    # Initial pose for Robot 1
-                    'initial_pose_x': LaunchConfiguration("initial_pose_x_robot2"),
-                    'initial_pose_y': LaunchConfiguration("initial_pose_y_robot2"),
-                    'initial_pose_z': LaunchConfiguration("initial_pose_z_robot2"),
-                    'initial_pose_roll': LaunchConfiguration("initial_pose_roll_robot2"),
-                    'initial_pose_pitch': LaunchConfiguration("initial_pose_pitch_robot2"),
-                    'initial_pose_yaw': LaunchConfiguration("initial_pose_yaw_robot2"),
-                    'controllers_file': robot2_controller_file,
-                    # 'rviz_file': 'view_robots.rviz', # Not necessary as view_rviz is set to false
-                    'robot_controller': 'robot2_controllers',
-                    
-                    'description_package': LaunchConfiguration("description_package_robot2"),
-                    'launch_rviz': LaunchConfiguration("launch_rviz_robot2"), # Pass the declared argument
-                    # gen3.launch should not start Gazebo if dual_launch is managing it
-                    'launch_gazebo_server_client': PythonExpression(
-                        ["'false' if ('", sim_gazebo, "' == 'true' or '", sim_ignition, "' == 'true') else 'true'"]
-                    ),
-                    'gazebo_world_file': LaunchConfiguration("gazebo_world_file"),
-                    'headless_rendering': LaunchConfiguration("headless_rendering"),
-                    'managed_by_external_controller': gen3_managed_by_external_controller_setting,
-                }.items()
-            )
-        ]
-    )
-    ld.add_action(robot2_group)
-
     def launch_rigid_body_dynamics_controller(context):
-        robot_controllers = [ 
-            Node(
-                package=barrier_control_pkg_name,
-                executable='rigid_body_dynamics_controller',
-                name=robot1_controller_name,
-                output='screen',
-                emulate_tty=True,
-                parameters=[{
-                    # --- Frame Names ---
-                    'base_frame': f"{robot1_namespace}/base_link",
-                    'tool_frame': f"{robot1_namespace}/end_effector_link",
-                    # --- Controller Gains & Settings ---
-                    # Kp gains [x, y, z, rx, ry, rz] - Tune these values!
-                    'kp_gains': [0.1] * 6, # Reduced for slower movement
-                    'kd_gains': [0.005]*3 + [0.005] * 3,
-                    'jacobian_damping': 0.05, # Damping for pseudo-inverse singularity robustness (increased slightly)
-                    'euler_input_convention': 'quat', # Convention for interpreting target orientation if given as Euler: 'xyz', 'zyx', etc.
-                    # --- Joint Specific Settings ---
-                    # IMPORTANT: List joint names in the order your robot model (and RTB) expects them.
-                    'controlled_joint_names': [f'{robot1_namespace}/joint_1', f'{robot1_namespace}/joint_2', f'{robot1_namespace}/joint_3', f'{robot1_namespace}/joint_4', f'{robot1_namespace}/joint_5', f'{robot1_namespace}/joint_6'],
-                    # Max joint velocities (rad/s) - Set based on your robot's limits!
-                    # Example for a 6DOF arm, replace with actual values
-                    'max_joint_velocities': [0.1] * 6, 
-                    # --- Control Settings & Topic Names ---
-                    'joint_limit_buffer': 0.01, # Small buffer (rad or m) for joint position limits
-                    'control_frequency': 20.0, # Control loop frequency in Hz
-                    'error_tolerance': [0.02] * 3 + [0.1]*3, # Pos [m], Orient [rad]
-                    'joint_state_topic': robot1_joint_state_topic,
-                    'target_pose_topic': robot1_target_pose_topic,
-                    'velocity_command_topic': robot1_velocity_command_topic,
-                    # --- Velocity Command Service Parameters ---
-                    'use_service_velocity_command_str': use_fake_hardware.perform(context), # Pass the string directly
-                    'arm_index': 0,
-                    'velocity_command_service': '/send_joint_speeds', # Default, but can be explicit
-                    # --- Robot Description ---
-                    'robot_description_package': 'kortex_description', # Your robot description package
-                    'robot_description_xacro_path': 'robots/gen3.xacro', # Relative path within the package
-                    # Arguments passed to xacro - adjust as needed for your URDF/XACRO
-                    'xacro_args': PythonExpression([
-                        "'dof:=6 use_fake_hardware:=",
-                        use_fake_hardware,
-                        " robot_ip:=dummy1 prefix:=", # dummy1 is fine for xacro context if not used for real connection by xacro
-                        robot1_namespace, "/", # Prefix for namespacing in URDF
-                        " initial_pose_x:=", LaunchConfiguration("initial_pose_x_robot1"),
-                        " initial_pose_y:=", LaunchConfiguration("initial_pose_y_robot1"),
-                        " initial_pose_z:=", LaunchConfiguration("initial_pose_z_robot1"),
-                        " initial_pose_roll:=", LaunchConfiguration("initial_pose_roll_robot1"),
-                        " initial_pose_pitch:=", LaunchConfiguration("initial_pose_pitch_robot1"),
-                        " initial_pose_yaw:=", LaunchConfiguration("initial_pose_yaw_robot1"),
-                        " sim_gazebo:=",
-                        sim_gazebo, " sim_ignition:=",
-                        sim_ignition, " robot_controller:=",
-                        robot1_controller_name, "'"
-                    ]),
-                }],
-                arguments=['--ros-args', '--log-level', 'rigid_body_dynamics_controller:=debug']
-            ),
-            Node(
-                package=barrier_control_pkg_name,
-                executable='rigid_body_dynamics_controller',
-                name=robot2_controller_name,
-                output='screen',
-                emulate_tty=True,
-                parameters=[{
-                    # --- Frame Names ---
-                    'base_frame': f"{robot2_namespace}/base_link",
-                    'tool_frame': f"{robot2_namespace}/end_effector_link",
-                    # --- Controller Gains & Settings ---
-                    # Kp gains [x, y, z, rx, ry, rz] - Tune these values!
-                    'kp_gains': [0.1] * 6, # Reduced for slower movement
-                    'kd_gains': [0.005]*3 + [0.005] * 3,
-                    'jacobian_damping': 0.05, # Damping for pseudo-inverse singularity robustness (increased slightly)
-                    'euler_input_convention': 'quat', # Convention for interpreting target orientation if given as Euler: 'xyz', 'zyx', etc.
-                    # --- Joint Specific Settings ---
-                    # IMPORTANT: List joint names in the order your robot model (and RTB) expects them.
-                    'controlled_joint_names': [f'{robot2_namespace}/joint_1', f'{robot2_namespace}/joint_2', f'{robot2_namespace}/joint_3', f'{robot2_namespace}/joint_4', f'{robot2_namespace}/joint_5', f'{robot2_namespace}/joint_6'],
-                    # Max joint velocities (rad/s) - Set based on your robot's limits!
-                    # Example for a 6DOF arm, replace with actual values
-                    'max_joint_velocities': [0.1] * 6, 
-                    # --- Control Settings & Topic Names ---
-                    'joint_limit_buffer': 0.01, # Small buffer (rad or m) for joint position limits
-                    'control_frequency': 20.0, # Control loop frequency in Hz
-                    'error_tolerance': [0.02] * 3 + [0.1]*3, # Pos [m], Orient [rad]
-                    'joint_state_topic': robot2_joint_state_topic,
-                    'target_pose_topic': robot2_target_pose_topic,
-                    'velocity_command_topic': robot2_velocity_command_topic,
-                    # --- Velocity Command Service Parameters ---
-                    'use_service_velocity_command_str': use_fake_hardware.perform(context), # Pass the string directly
-                    'arm_index': 1,
-                    'velocity_command_service': '/send_joint_speeds', # Default, but can be explicit
-                    # --- Robot Description ---
-                    'robot_description_package': 'kortex_description', # Your robot description package
-                    'robot_description_xacro_path': 'robots/gen3.xacro', # Relative path within the package
-                    # Arguments passed to xacro - adjust as needed for your URDF/XACRO
+        # --- Robot 1 Group ---    
+        robot1_group = GroupAction(
+            actions=[
+                # Push the namespace for all nodes/includes within this group
+                PushRosNamespace(robot1_namespace),
 
-                    'xacro_args': PythonExpression([
-                        "'dof:=6 use_fake_hardware:=",
-                        use_fake_hardware,
-                        " robot_ip:=dummy2 prefix:=", # dummy2 is fine for xacro context
-                        robot2_namespace, "/", # Prefix for namespacing in URDF
-                        " initial_pose_x:=", LaunchConfiguration("initial_pose_x_robot2"),
-                        " initial_pose_y:=", LaunchConfiguration("initial_pose_y_robot2"),
-                        " initial_pose_z:=", LaunchConfiguration("initial_pose_z_robot2"),
-                        " initial_pose_roll:=", LaunchConfiguration("initial_pose_roll_robot2"),
-                        " initial_pose_pitch:=", LaunchConfiguration("initial_pose_pitch_robot2"),
-                        " initial_pose_yaw:=", LaunchConfiguration("initial_pose_yaw_robot2"),
-                        " sim_gazebo:=",
-                        sim_gazebo, " sim_ignition:=",
-                        sim_ignition, " robot_controller:=",
-                        robot2_controller_name, "'" # Make sure spacing is correct for the final xacro string
-                    ]),
-                }],
-                arguments=['--ros-args', '--log-level', 'rigid_body_dynamics_controller:=debug']
-            )
+                # Include kortex_bringup for Robot 1
+                IncludeLaunchDescription(
+                    PythonLaunchDescriptionSource(gen3_launch_file),
+                    launch_arguments={
+                        'dof': '6',
+                        'use_fake_hardware': use_fake_hardware,
+                        'sim_gazebo': sim_gazebo,
+                        'sim_ignition': sim_ignition,
+                        'use_sim_time': use_sim_time,
+                        'robot_ip': LaunchConfiguration('robot1_ip_real'), # Use unique dummy IPs if needed, though often not critical for fake_hardware
+                        'prefix': f"{robot1_namespace}/", # Pass the prefix argument with a trailing slash
+                        'namespace': f"/{robot1_namespace}", # Namespace for the robot
+                        # Initial pose for Robot 1
+                        'initial_pose_x': LaunchConfiguration("initial_pose_x_robot1"),
+                        'initial_pose_y': LaunchConfiguration("initial_pose_y_robot1"),
+                        'initial_pose_z': LaunchConfiguration("initial_pose_z_robot1"),
+                        'initial_pose_roll': LaunchConfiguration("initial_pose_roll_robot1"),
+                        'initial_pose_pitch': LaunchConfiguration("initial_pose_pitch_robot1"),
+                        'initial_pose_yaw': LaunchConfiguration("initial_pose_yaw_robot1"),
+                        'controllers_file': robot1_controller_file,
+                        'robot_controller': robot1_controller_name, # Specify this controller
+                        'rviz_file': 'view_robots.rviz', # Specify the RViz file for Robots
+                        'description_package': LaunchConfiguration("description_package_robot1"),
+                        'launch_rviz': LaunchConfiguration("launch_rviz_robot1"), # Pass the declared argument
+                        # gen3.launch should not start Gazebo if dual_launch is managing it (when sim_gazebo or sim_ignition is true for dual_launch)
+                        'launch_gazebo_server_client': PythonExpression(
+                            ["'false' if ('", sim_gazebo, "' == 'true' or '", sim_ignition, "' == 'true') else 'true'"]
+                        ),
+                        'gazebo_world_file': LaunchConfiguration("gazebo_world_file"),
+                        'headless_rendering': LaunchConfiguration("headless_rendering"),
+                        'managed_by_external_controller': gen3_managed_by_external_controller_setting,
+                    }.items()
+                # ),
+                # Node(
+                #     package=barrier_control_pkg_name,
+                #     executable='rigid_body_dynamics_controller',
+                #     name=robot1_controller_name,
+                #     output='screen',
+                #     emulate_tty=True,
+                #     parameters=[{
+                #         # --- Frame Names ---
+                #         'base_frame': f"{robot1_namespace}/base_link",
+                #         'tool_frame': f"{robot1_namespace}/end_effector_link",
+                #         # --- Controller Gains & Settings ---
+                #         # Kp gains [x, y, z, rx, ry, rz] - Tune these values!
+                #         'kp_gains': [0.2] * 6, # Reduced for slower movement
+                #         'kd_gains': [0.005]*3 + [0.005] * 3,
+                #         'jacobian_damping': 0.05, # Damping for pseudo-inverse singularity robustness (increased slightly)
+                #         'euler_input_convention': 'quat', # Convention for interpreting target orientation if given as Euler: 'xyz', 'zyx', etc.
+                #         # --- Joint Specific Settings ---
+                #         # IMPORTANT: List joint names in the order your robot model (and RTB) expects them.
+                #         'controlled_joint_names': [f'{robot1_namespace}/joint_1', f'{robot1_namespace}/joint_2', f'{robot1_namespace}/joint_3', f'{robot1_namespace}/joint_4', f'{robot1_namespace}/joint_5', f'{robot1_namespace}/joint_6'],
+                #         # Max joint velocities (rad/s) - Set based on your robot's limits!
+                #         # Example for a 6DOF arm, replace with actual values
+                #         'max_joint_velocities': [0.2] * 6, 
+                #         # --- Control Settings & Topic Names ---
+                #         'joint_limit_buffer': 0.01, # Small buffer (rad or m) for joint position limits
+                #         'control_frequency': 5.0, # Control loop frequency in Hz
+                #         'error_tolerance': [0.02] * 3 + [0.1]*3, # Pos [m], Orient [rad]
+                #         'joint_state_topic': robot1_joint_state_topic,
+                #         'target_pose_topic': robot1_target_pose_topic,
+                #         'velocity_command_topic': robot1_velocity_command_topic,
+                #         # --- Velocity Command Service Parameters ---
+                #         'use_service_velocity_command_str': use_fake_hardware.perform(context), # Pass the string directly
+                #         'arm_index': 0,
+                #         'velocity_command_service': '/send_joint_speeds', # Default, but can be explicit
+                #         # --- Robot Description ---
+                #         'robot_description_package': 'kortex_description', # Your robot description package
+                #         'robot_description_xacro_path': 'robots/gen3.xacro', # Relative path within the package
+                #         # Arguments passed to xacro - adjust as needed for your URDF/XACRO
+                #         'xacro_args': PythonExpression([
+                #             "'dof:=6 use_fake_hardware:=",
+                #             use_fake_hardware,
+                #             " robot_ip:=dummy1 prefix:=", # dummy1 is fine for xacro context if not used for real connection by xacro
+                #             robot1_namespace, "/", # Prefix for namespacing in URDF
+                #             " initial_pose_x:=", LaunchConfiguration("initial_pose_x_robot1"),
+                #             " initial_pose_y:=", LaunchConfiguration("initial_pose_y_robot1"),
+                #             " initial_pose_z:=", LaunchConfiguration("initial_pose_z_robot1"),
+                #             " initial_pose_roll:=", LaunchConfiguration("initial_pose_roll_robot1"),
+                #             " initial_pose_pitch:=", LaunchConfiguration("initial_pose_pitch_robot1"),
+                #             " initial_pose_yaw:=", LaunchConfiguration("initial_pose_yaw_robot1"),
+                #             " sim_gazebo:=",
+                #             sim_gazebo, " sim_ignition:=",
+                #             sim_ignition, " robot_controller:=",
+                #             robot1_controller_name, "'"
+                #         ]),
+                #     }],
+                #     arguments=['--ros-args', '--log-level', 'rigid_body_dynamics_controller:=debug']
+                )
+            ]
+        )
+
+        # --- Robot 2 Group ---
+        robot2_group = GroupAction(
+            actions=[
+                # Push the namespace for all nodes/includes within this group
+                PushRosNamespace(robot2_namespace),
+
+                # Include kortex_bringup for Robot 1
+                IncludeLaunchDescription(
+                    PythonLaunchDescriptionSource(gen3_launch_file),
+                    launch_arguments={
+                        'dof': '6',
+                        'use_fake_hardware': use_fake_hardware,
+                        'sim_gazebo': 'false', # Pass the main sim_gazebo flag
+                        'sim_ignition': 'false', # Pass the main sim_ignition flag
+                        'use_sim_time': 'false',
+                        'robot_ip': LaunchConfiguration('robot2_ip_real').perform(context), # Use unique dummy IPs if needed, though often not critical for fake_hardware
+                        'prefix': f"{robot2_namespace}/", # Pass the prefix argument with a trailing slash
+                        'namespace': f"/{robot2_namespace}", # Namespace for the robot
+                        # Initial pose for Robot 1
+                        'initial_pose_x': LaunchConfiguration("initial_pose_x_robot2"),
+                        'initial_pose_y': LaunchConfiguration("initial_pose_y_robot2"),
+                        'initial_pose_z': LaunchConfiguration("initial_pose_z_robot2"),
+                        'initial_pose_roll': LaunchConfiguration("initial_pose_roll_robot2"),
+                        'initial_pose_pitch': LaunchConfiguration("initial_pose_pitch_robot2"),
+                        'initial_pose_yaw': LaunchConfiguration("initial_pose_yaw_robot2"),
+                        'controllers_file': robot2_controller_file,
+                        # 'rviz_file': 'view_robots.rviz', # Not necessary as view_rviz is set to false
+                        'robot_controller': 'robot2_controllers',
+                        
+                        'description_package': LaunchConfiguration("description_package_robot2"),
+                        'launch_rviz': LaunchConfiguration("launch_rviz_robot2"), # Pass the declared argument
+                        # gen3.launch should not start Gazebo if dual_launch is managing it
+                        'launch_gazebo_server_client': PythonExpression(
+                            ["'false' if ('", sim_gazebo, "' == 'true' or '", sim_ignition, "' == 'true') else 'true'"]
+                        ),
+                        'gazebo_world_file': LaunchConfiguration("gazebo_world_file"),
+                        'headless_rendering': LaunchConfiguration("headless_rendering"),
+                        'managed_by_external_controller': gen3_managed_by_external_controller_setting,
+                    }.items()
+                # ),
+                # Node(
+                #     package=barrier_control_pkg_name,
+                #     executable='rigid_body_dynamics_controller',
+                #     name=robot2_controller_name,
+                #     output='screen',
+                #     emulate_tty=True,
+                #     parameters=[{
+                #         # --- Frame Names ---
+                #         'base_frame': f"{robot2_namespace}/base_link",
+                #         'tool_frame': f"{robot2_namespace}/end_effector_link",
+                #         # --- Controller Gains & Settings ---
+                #         # Kp gains [x, y, z, rx, ry, rz] - Tune these values!
+                #         'kp_gains': [0.1] * 6, # Reduced for slower movement
+                #         'kd_gains': [0.005]*3 + [0.005] * 3,
+                #         'jacobian_damping': 0.05, # Damping for pseudo-inverse singularity robustness (increased slightly)
+                #         'euler_input_convention': 'quat', # Convention for interpreting target orientation if given as Euler: 'xyz', 'zyx', etc.
+                #         # --- Joint Specific Settings ---
+                #         # IMPORTANT: List joint names in the order your robot model (and RTB) expects them.
+                #         'controlled_joint_names': [f'{robot2_namespace}/joint_1', f'{robot2_namespace}/joint_2', f'{robot2_namespace}/joint_3', f'{robot2_namespace}/joint_4', f'{robot2_namespace}/joint_5', f'{robot2_namespace}/joint_6'],
+                #         # Max joint velocities (rad/s) - Set based on your robot's limits!
+                #         # Example for a 6DOF arm, replace with actual values
+                #         'max_joint_velocities': [0.1] * 6, 
+                #         # --- Control Settings & Topic Names ---
+                #         'joint_limit_buffer': 0.01, # Small buffer (rad or m) for joint position limits
+                #         'control_frequency': 5.0, # Control loop frequency in Hz
+                #         'error_tolerance': [0.02] * 3 + [0.1]*3, # Pos [m], Orient [rad]
+                #         'joint_state_topic': robot2_joint_state_topic,
+                #         'target_pose_topic': robot2_target_pose_topic,
+                #         'velocity_command_topic': robot2_velocity_command_topic,
+                #         # --- Velocity Command Service Parameters ---
+                #         'use_service_velocity_command_str': use_fake_hardware.perform(context), # Pass the string directly
+                #         'arm_index': 1,
+                #         'velocity_command_service': '/send_joint_speeds', # Default, but can be explicit
+                #         # --- Robot Description ---
+                #         'robot_description_package': 'kortex_description', # Your robot description package
+                #         'robot_description_xacro_path': 'robots/gen3.xacro', # Relative path within the package
+                #         # Arguments passed to xacro - adjust as needed for your URDF/XACRO
+
+                #         'xacro_args': PythonExpression([
+                #             "'dof:=6 use_fake_hardware:=",
+                #             use_fake_hardware,
+                #             " robot_ip:=dummy2 prefix:=", # dummy2 is fine for xacro context
+                #             robot2_namespace, "/", # Prefix for namespacing in URDF
+                #             " initial_pose_x:=", LaunchConfiguration("initial_pose_x_robot2"),
+                #             " initial_pose_y:=", LaunchConfiguration("initial_pose_y_robot2"),
+                #             " initial_pose_z:=", LaunchConfiguration("initial_pose_z_robot2"),
+                #             " initial_pose_roll:=", LaunchConfiguration("initial_pose_roll_robot2"),
+                #             " initial_pose_pitch:=", LaunchConfiguration("initial_pose_pitch_robot2"),
+                #             " initial_pose_yaw:=", LaunchConfiguration("initial_pose_yaw_robot2"),
+                #             " sim_gazebo:=",
+                #             sim_gazebo, " sim_ignition:=",
+                #             sim_ignition, " robot_controller:=",
+                #             robot2_controller_name, "'" # Make sure spacing is correct for the final xacro string
+                #         ]),
+                #     }],
+                #     arguments=['--ros-args', '--log-level', 'rigid_body_dynamics_controller:=debug']
+                )
+            ]
+        )
+        robot_controllers = [ 
+            robot1_group, # Add the Robot 1 group
+            # robot2_group
+            
         ]
         return robot_controllers
 
     ld.add_action(OpaqueFunction(function=launch_rigid_body_dynamics_controller))
 
-    # --- Conditionally launch Kortex Dual Arm Node for real robot control ---
-    def launch_kortex_node_conditionally(context):
-        if LaunchConfiguration('use_fake_hardware').perform(context) == 'false':
-            LogInfo(msg="use_fake_hardware is false. Launching Kortex Dual Arm Node for real robot control.")
-            kortex_dual_arm_node = Node(
-                package=barrier_control_pkg_name,
-                executable='kortex_dual_arm_node', # Ensure this is the correct executable name from setup.py
-                name='kortex_dual_arm_manager',
-                output='screen',
-                parameters=[
-                    {'robot_ips': [
-                        LaunchConfiguration('robot1_ip_real').perform(context), 
-                        LaunchConfiguration('robot2_ip_real').perform(context)
-                    ]},
-                    {'robot_ports': [10000, 10000]}, # Default Kortex ports, can be parameterized if needed
-                    {'robot_0_username': 'admin'}, # Can be parameterized
-                    {'robot_0_password': 'admin'}, # Can be parameterized
-                    {'robot_1_username': 'admin'}, # Can be parameterized
-                    {'robot_1_password': 'admin'}, # Can be parameterized
-                    {'robot1_joint_names': [f'{robot1_namespace}/joint_{i+1}' for i in range(6)]},
-                    {'robot2_joint_names': [f'{robot2_namespace}/joint_{i+1}' for i in range(6)]},
-                    {'joint_state_publish_rate': 50.0} # Can be parameterized
-                ]
-            )
-            return [kortex_dual_arm_node]
-        else:
-            LogInfo(msg="use_fake_hardware is true. Skipping Kortex Dual Arm Node launch.")
-            return []
+    # # --- Conditionally launch Kortex Dual Arm Node for real robot control ---
+    # def launch_kortex_node_conditionally(context):
+    #     if LaunchConfiguration('use_fake_hardware').perform(context) == 'false':
+    #         LogInfo(msg="use_fake_hardware is false. Launching Kortex Dual Arm Node for real robot control.")
+    #         kortex_dual_arm_node = Node(
+    #             package=barrier_control_pkg_name,
+    #             executable='kortex_dual_arm_node', # Ensure this is the correct executable name from setup.py
+    #             name='kortex_dual_arm_manager',
+    #             output='screen',
+    #             parameters=[
+    #                 {'robot_ips': [
+    #                     LaunchConfiguration('robot1_ip_real').perform(context), 
+    #                     LaunchConfiguration('robot2_ip_real').perform(context)
+    #                 ]},
+    #                 {'robot_ports': [10000, 10000]}, # Default Kortex ports, can be parameterized if needed
+    #                 {'robot_0_username': 'admin'}, # Can be parameterized
+    #                 {'robot_0_password': 'admin'}, # Can be parameterized
+    #                 {'robot_1_username': 'admin'}, # Can be parameterized
+    #                 {'robot_1_password': 'admin'}, # Can be parameterized
+    #                 {'robot1_joint_names': [f'{robot1_namespace}/joint_{i+1}' for i in range(6)]},
+    #                 {'robot2_joint_names': [f'{robot2_namespace}/joint_{i+1}' for i in range(6)]},
+    #                 {'joint_state_publish_rate': 50.0} # Can be parameterized
+    #             ]
+    #         )
+    #         return [kortex_dual_arm_node]
+    #     else:
+    #         LogInfo(msg="use_fake_hardware is true. Skipping Kortex Dual Arm Node launch.")
+    #         return []
 
-    ld.add_action(OpaqueFunction(function=launch_kortex_node_conditionally))
+    # ld.add_action(OpaqueFunction(function=launch_kortex_node_conditionally))
 
     return ld
