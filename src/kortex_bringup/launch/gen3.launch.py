@@ -197,13 +197,6 @@ def generate_launch_description():
             description="Run Gazebo in headless mode (no GUI).",
         )
     )
-    declared_arguments.append(
-        DeclareLaunchArgument(
-            "managed_by_external_controller",
-            default_value="false",
-            description="If true, C++ controller_manager and spawners are not launched by kortex_control.",
-        )
-    )
 
 
     # Initialize Arguments
@@ -239,7 +232,6 @@ def generate_launch_description():
     # Gazebo specific arguments (newly added for sim_gazebo)
     gazebo_world_file = LaunchConfiguration("gazebo_world_file")
     headless_rendering = LaunchConfiguration("headless_rendering")
-    managed_by_external_controller = LaunchConfiguration("managed_by_external_controller")
 
     base_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource([ThisLaunchFileDir(), "/kortex_control.launch.py"]),
@@ -273,7 +265,6 @@ def generate_launch_description():
             "use_sim_time": use_sim_time,
             "gazebo_world_file": gazebo_world_file,
             "headless_rendering": headless_rendering,
-            "managed_by_external_controller": managed_by_external_controller,
         }.items(),
     )
 

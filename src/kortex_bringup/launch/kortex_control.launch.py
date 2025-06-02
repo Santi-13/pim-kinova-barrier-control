@@ -69,7 +69,6 @@ def launch_setup(context, *args, **kwargs):
     gripper_joint_name = LaunchConfiguration("gripper_joint_name")
     use_sim_time = LaunchConfiguration("use_sim_time")
 
-    managed_by_external_controller = LaunchConfiguration("managed_by_external_controller")
 
     
     # Initial Pose Arguments
@@ -180,7 +179,7 @@ def launch_setup(context, *args, **kwargs):
             "sim_gazebo:=",
             sim_gazebo,
             " ",
-            "sim_ignition:=", # Add this
+            "sim_ignition:=", 
             sim_ignition,
             " ",
             "simulation_controllers:=",
@@ -196,14 +195,17 @@ def launch_setup(context, *args, **kwargs):
     control_node = Node(
         package="controller_manager",
         executable="ros2_control_node",
-        # name="controller_manager",  # Explicitly name the node
+        # name="THISNODE",  # Explicitly name the node
         parameters=[
             robot_controllers_path,
             {"use_sim_time": use_sim_time},
             ], # Use the determined path
+            
         remappings=[
             ("~/robot_description", f"{namespace.perform(context)}/robot_description"),
         ],
+        # arguments=['--ros-args', '--log-level', 'info'],  
+        arguments=['--ros-args', '--log-level', 'KortexMultiInterfaceHardware:=INFO'],
         output="both",
     )
 
@@ -237,10 +239,8 @@ def launch_setup(context, *args, **kwargs):
             "--controller-manager",
             PathJoinSubstitution([namespace, "controller_manager"]), # Use namespaced controller_manager
         ],
-        condition=IfCondition(PythonExpression(["'", managed_by_external_controller, "' == 'false'"]))
     )   
 
-    # Delay rviz start if NOT externally managed and joint_state_broadcaster is running
     delay_rviz_after_joint_state_broadcaster_spawner = RegisterEventHandler(
         event_handler=OnProcessExit(
             target_action=joint_state_broadcaster_spawner, # This spawner is conditional
@@ -248,9 +248,8 @@ def launch_setup(context, *args, **kwargs):
         ),
         # This event handler is active if:
         # 1. RViz is to be launched
-        # 2. We are NOT externally managed (so joint_state_broadcaster_spawner will run)
         condition=IfCondition(PythonExpression([
-            "'", launch_rviz, "' == 'true' and '", managed_by_external_controller, "' == 'false'"
+            "'", launch_rviz, "' == 'true'"
         ]))
     )
 
@@ -259,8 +258,7 @@ def launch_setup(context, *args, **kwargs):
     robot_traj_controller_spawner = Node(
         package="controller_manager",
         executable="spawner",
-        arguments=[robot_traj_controller, "-c", "controller_manager"],
-        condition=IfCondition(PythonExpression(["'", managed_by_external_controller, "' == 'false'"]))
+        arguments=[robot_traj_controller, "-c", "controller_manager"]
     )
 
     # robot_pos_controller_spawner = Node(
@@ -274,8 +272,7 @@ def launch_setup(context, *args, **kwargs):
         executable="spawner",
         arguments=[robot_hand_controller, "-c", "controller_manager"],
         condition=IfCondition(PythonExpression([
-            "'", gripper, "' != '' and ", # Check gripper is not empty
-            "'", managed_by_external_controller, "' == 'false'" # Check not externally managed
+            "'", gripper, "' != ''", # Check gripper is not empty
         ])),
     )
 
@@ -323,8 +320,7 @@ def launch_setup(context, *args, **kwargs):
         executable="spawner",
         arguments=[fault_controller, "-c", "controller_manager"],
         condition=IfCondition(PythonExpression([
-            "'", use_internal_bus_gripper_comm, "' == 'true' and ", # Check internal bus comm is true
-            "'", managed_by_external_controller, "' == 'false'" # Check not externally managed
+            "'", use_internal_bus_gripper_comm, "' == 'true'", # Check internal bus comm is true
         ])),
     )
 
@@ -336,20 +332,12 @@ def launch_setup(context, *args, **kwargs):
         delay_rviz_after_joint_state_broadcaster_spawner, # Handles delayed RViz
 
     ]
-
-    # Conditionally add direct RViz launch if externally managed
-    def add_direct_rviz_if_needed(context):
-        if launch_rviz.perform(context) == 'true' and \
-           managed_by_external_controller.perform(context) == 'true':
-            return [rviz_node_inst] # rviz_node_inst already has IfCondition(launch_rviz)
-        return []
     
     if use_fake_hardware.perform(context) == "false":
         nodes_to_start.append(joint_state_broadcaster_spawner)
         nodes_to_start.append(robot_traj_controller_spawner)
     nodes_to_start.append(robot_hand_controller_spawner) # It has its own IfCondition
     nodes_to_start.append(fault_controller_spawner)      # It has its own IfCondition
-    nodes_to_start.append(OpaqueFunction(function=add_direct_rviz_if_needed))
     
 
     sim_gazebo_value = sim_gazebo.perform(context)
@@ -376,31 +364,28 @@ def launch_setup(context, *args, **kwargs):
         nodes_to_start.append(gazebo_launch)
         nodes_to_start.append(gz_spawn_entity)
 
-        # Event handlers for spawners, only if not externally managed
-        if managed_by_external_controller.perform(context) == 'false':
-            nodes_to_start.append(RegisterEventHandler(
-                event_handler=OnProcessExit(
-                    target_action=gz_spawn_entity,
-                    on_exit=[joint_state_broadcaster_spawner], # JSB is already conditional
-                )
-            ))
+        nodes_to_start.append(RegisterEventHandler(
+            event_handler=OnProcessExit(
+                target_action=gz_spawn_entity,
+                on_exit=[joint_state_broadcaster_spawner], # JSB is already conditional
+            )
+        ))
 
 
-            # Determine actions to run after joint_state_broadcaster_spawner exits
-            # These spawners (traj, hand) are already conditional on managed_by_external_controller
-            on_exit_actions_after_jsb = [robot_traj_controller_spawner] # Already conditional
-            # robot_hand_controller_spawner is also already conditional
-            # We only add it to on_exit if its other primary condition (gripper exists) is also met.
-            if gripper.perform(context) != '': 
-                    on_exit_actions_after_jsb.append(robot_hand_controller_spawner)
+        # Determine actions to run after joint_state_broadcaster_spawner exits
+        on_exit_actions_after_jsb = [robot_traj_controller_spawner] # Already conditional
+        # robot_hand_controller_spawner is also already conditional
+        # We only add it to on_exit if its other primary condition (gripper exists) is also met.
+        if gripper.perform(context) != '': 
+                on_exit_actions_after_jsb.append(robot_hand_controller_spawner)
 
-            nodes_to_start.append(RegisterEventHandler(
-                event_handler=OnProcessExit(
-                    target_action=joint_state_broadcaster_spawner, # JSB is already conditional
-                    on_exit=on_exit_actions_after_jsb,
-                )
-            ))
-    
+        nodes_to_start.append(RegisterEventHandler(
+            event_handler=OnProcessExit(
+                target_action=joint_state_broadcaster_spawner, # JSB is already conditional
+                on_exit=on_exit_actions_after_jsb,
+            )
+        ))
+
         nodes_to_start.append(gz_robotiq_env_var_resource_path)
         nodes_to_start.append(bridge)
 
@@ -537,13 +522,7 @@ def generate_launch_description():
             Used only if 'use_fake_hardware' parameter is true.",
         )
     )
-    declared_arguments.append(
-        DeclareLaunchArgument(
-            "managed_by_external_controller",
-            default_value="false",
-            description="If true, C++ controller_manager and spawners are not launched by this file.",
-        )
-    )
+
     
     # declared_arguments.append(
     #     DeclareLaunchArgument(

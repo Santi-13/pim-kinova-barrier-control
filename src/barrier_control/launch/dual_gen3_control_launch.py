@@ -160,26 +160,12 @@ def generate_launch_description():
     robot1_controller_file = 'robot1_controllers.yaml'
     robot1_target_pose_topic = 'target_pose' # Relative topic name within namespace
     robot1_joint_state_topic = 'joint_states' # Relative topic name within namespace
-    robot1_velocity_command_topic = 'robot1_controllers/commands' # Relative topic name
-    
-    # Logic for use_fake_hardware passed to gen3.launch.py
-    # If main use_fake_hardware is false (real robot) AND not Gazebo/Ignition, gen3.launch uses its fake_hardware.
-    # Otherwise, gen3.launch uses the main use_fake_hardware setting.
-    gen3_use_fake_hardware_setting = PythonExpression([
-        "'true' if ('", use_fake_hardware, "' == 'false' and '", sim_gazebo, "' == 'false' and '", sim_ignition, "' == 'false') else '", use_fake_hardware, "'"
-    ])
-    # If main use_fake_hardware is false (real robot mode), then gen3.launch.py is told it's managed externally.
-    gen3_managed_by_external_controller_setting = PythonExpression([
-        "'true' if '", use_fake_hardware, "' == 'false' else 'false'"
-    ])
-
-
-    
+    robot1_velocity_command_topic = 'robot1_controllers/commands' # Relative topic name  
 
     # --- Robot 2 Configuration ---
     robot2_namespace = 'robot2'
     robot2_controller_name = 'joint_trajectory_controller'
-    robot2_controller_file = 'ros2_controllers.yaml'
+    robot2_controller_file = 'robot2_controllers.yaml'
     robot2_target_pose_topic = 'target_pose' # Can be the same relative name
     robot2_joint_state_topic = 'joint_states' # Can be the same relative name
     robot2_velocity_command_topic = 'robot2_controllers/commands' # Can be the same relative name
@@ -225,7 +211,6 @@ def generate_launch_description():
                         ),
                         'gazebo_world_file': LaunchConfiguration("gazebo_world_file"),
                         'headless_rendering': LaunchConfiguration("headless_rendering"),
-                        'managed_by_external_controller': gen3_managed_by_external_controller_setting,
                     }.items()
                 # ),
                 # Node(
@@ -314,7 +299,7 @@ def generate_launch_description():
                         'initial_pose_yaw': LaunchConfiguration("initial_pose_yaw_robot2"),
                         'controllers_file': robot2_controller_file,
                         # 'rviz_file': 'view_robots.rviz', # Not necessary as view_rviz is set to false
-                        'robot_controller': 'robot2_controllers',
+                        'robot_controller': robot2_controller_name,
                         
                         'description_package': LaunchConfiguration("description_package_robot2"),
                         'launch_rviz': LaunchConfiguration("launch_rviz_robot2"), # Pass the declared argument
@@ -324,7 +309,6 @@ def generate_launch_description():
                         ),
                         'gazebo_world_file': LaunchConfiguration("gazebo_world_file"),
                         'headless_rendering': LaunchConfiguration("headless_rendering"),
-                        'managed_by_external_controller': gen3_managed_by_external_controller_setting,
                     }.items()
                 # ),
                 # Node(
@@ -388,7 +372,7 @@ def generate_launch_description():
         )
         robot_controllers = [ 
             robot1_group, # Add the Robot 1 group
-            # robot2_group
+            robot2_group
             
         ]
         return robot_controllers
