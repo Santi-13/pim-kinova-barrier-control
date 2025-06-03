@@ -160,7 +160,7 @@ def generate_launch_description():
     robot1_controller_file = 'robot1_controllers.yaml'
     robot1_target_pose_topic = 'target_pose' # Relative topic name within namespace
     robot1_joint_state_topic = 'joint_states' # Relative topic name within namespace
-    robot1_velocity_command_topic = 'robot1_controllers/commands' # Relative topic name  
+    robot1_joint_trajectory_topic = 'joint_trajectory_controller/joint_trajectory' # Relative topic name  
 
     # --- Robot 2 Configuration ---
     robot2_namespace = 'robot2'
@@ -168,7 +168,7 @@ def generate_launch_description():
     robot2_controller_file = 'robot2_controllers.yaml'
     robot2_target_pose_topic = 'target_pose' # Can be the same relative name
     robot2_joint_state_topic = 'joint_states' # Can be the same relative name
-    robot2_velocity_command_topic = 'robot2_controllers/commands' # Can be the same relative name
+    robot2_joint_trajectory_topic = 'joint_trajectory_controller/joint_trajectory' # Can be the same relative name
 
     # --- Create Launch Description ---
     ld = LaunchDescription(declared_arguments)
@@ -212,62 +212,59 @@ def generate_launch_description():
                         'gazebo_world_file': LaunchConfiguration("gazebo_world_file"),
                         'headless_rendering': LaunchConfiguration("headless_rendering"),
                     }.items()
-                # ),
-                # Node(
-                #     package=barrier_control_pkg_name,
-                #     executable='rigid_body_dynamics_controller',
-                #     name=robot1_controller_name,
-                #     output='screen',
-                #     emulate_tty=True,
-                #     parameters=[{
-                #         # --- Frame Names ---
-                #         'base_frame': f"{robot1_namespace}/base_link",
-                #         'tool_frame': f"{robot1_namespace}/end_effector_link",
-                #         # --- Controller Gains & Settings ---
-                #         # Kp gains [x, y, z, rx, ry, rz] - Tune these values!
-                #         'kp_gains': [0.2] * 6, # Reduced for slower movement
-                #         'kd_gains': [0.005]*3 + [0.005] * 3,
-                #         'jacobian_damping': 0.05, # Damping for pseudo-inverse singularity robustness (increased slightly)
-                #         'euler_input_convention': 'quat', # Convention for interpreting target orientation if given as Euler: 'xyz', 'zyx', etc.
-                #         # --- Joint Specific Settings ---
-                #         # IMPORTANT: List joint names in the order your robot model (and RTB) expects them.
-                #         'controlled_joint_names': [f'{robot1_namespace}/joint_1', f'{robot1_namespace}/joint_2', f'{robot1_namespace}/joint_3', f'{robot1_namespace}/joint_4', f'{robot1_namespace}/joint_5', f'{robot1_namespace}/joint_6'],
-                #         # Max joint velocities (rad/s) - Set based on your robot's limits!
-                #         # Example for a 6DOF arm, replace with actual values
-                #         'max_joint_velocities': [0.2] * 6, 
-                #         # --- Control Settings & Topic Names ---
-                #         'joint_limit_buffer': 0.01, # Small buffer (rad or m) for joint position limits
-                #         'control_frequency': 5.0, # Control loop frequency in Hz
-                #         'error_tolerance': [0.02] * 3 + [0.1]*3, # Pos [m], Orient [rad]
-                #         'joint_state_topic': robot1_joint_state_topic,
-                #         'target_pose_topic': robot1_target_pose_topic,
-                #         'velocity_command_topic': robot1_velocity_command_topic,
-                #         # --- Velocity Command Service Parameters ---
-                #         'use_service_velocity_command_str': use_fake_hardware.perform(context), # Pass the string directly
-                #         'arm_index': 0,
-                #         'velocity_command_service': '/send_joint_speeds', # Default, but can be explicit
-                #         # --- Robot Description ---
-                #         'robot_description_package': 'kortex_description', # Your robot description package
-                #         'robot_description_xacro_path': 'robots/gen3.xacro', # Relative path within the package
-                #         # Arguments passed to xacro - adjust as needed for your URDF/XACRO
-                #         'xacro_args': PythonExpression([
-                #             "'dof:=6 use_fake_hardware:=",
-                #             use_fake_hardware,
-                #             " robot_ip:=dummy1 prefix:=", # dummy1 is fine for xacro context if not used for real connection by xacro
-                #             robot1_namespace, "/", # Prefix for namespacing in URDF
-                #             " initial_pose_x:=", LaunchConfiguration("initial_pose_x_robot1"),
-                #             " initial_pose_y:=", LaunchConfiguration("initial_pose_y_robot1"),
-                #             " initial_pose_z:=", LaunchConfiguration("initial_pose_z_robot1"),
-                #             " initial_pose_roll:=", LaunchConfiguration("initial_pose_roll_robot1"),
-                #             " initial_pose_pitch:=", LaunchConfiguration("initial_pose_pitch_robot1"),
-                #             " initial_pose_yaw:=", LaunchConfiguration("initial_pose_yaw_robot1"),
-                #             " sim_gazebo:=",
-                #             sim_gazebo, " sim_ignition:=",
-                #             sim_ignition, " robot_controller:=",
-                #             robot1_controller_name, "'"
-                #         ]),
-                #     }],
-                #     arguments=['--ros-args', '--log-level', 'rigid_body_dynamics_controller:=debug']
+                ),
+                Node(
+                    package=barrier_control_pkg_name,
+                    executable='rigid_body_dynamics_controller',
+                    name=robot1_controller_name,
+                    output='screen',
+                    emulate_tty=True,
+                    parameters=[{
+                        # --- Frame Names ---
+                        'base_frame': f"{robot1_namespace}/base_link",
+                        'tool_frame': f"{robot1_namespace}/end_effector_link",
+                        # --- Controller Gains & Settings ---
+                        # Kp gains [x, y, z, rx, ry, rz] - Tune these values!
+                        'kp_gains': [0.2] * 6, # Reduced for slower movement
+                        'kd_gains': [0.005]*3 + [0.005] * 3,
+                        'jacobian_damping': 0.05, # Damping for pseudo-inverse singularity robustness (increased slightly)
+                        'euler_input_convention': 'quat', # Convention for interpreting target orientation if given as Euler: 'xyz', 'zyx', etc.
+                        # --- Joint Specific Settings ---
+                        # IMPORTANT: List joint names in the order your robot model (and RTB) expects them.
+                        'controlled_joint_names': [f'{robot1_namespace}/joint_1', f'{robot1_namespace}/joint_2', f'{robot1_namespace}/joint_3', f'{robot1_namespace}/joint_4', f'{robot1_namespace}/joint_5', f'{robot1_namespace}/joint_6'],
+                        # Example for a 6DOF arm, replace with actual values
+                        'max_joint_velocities': [0.2] * 6, 
+                        # --- Control Settings & Topic Names ---
+                        'joint_limit_buffer': 0.01, # Small buffer (rad or m) for joint position limits
+                        'control_frequency': 5.0, # Control loop frequency in Hz
+                        'error_tolerance': [0.02] * 3 + [0.1]*3, # Pos [m], Orient [rad]
+                        'joint_state_topic': robot1_joint_state_topic,
+                        'target_pose_topic': robot1_target_pose_topic,
+                        'joint_trajectory_topic': robot1_joint_trajectory_topic,
+                        # --- Velocity Command Service Parameters ---
+                        'arm_index': 0,
+                        # --- Robot Description ---
+                        'robot_description_package': 'kortex_description', # Your robot description package
+                        'robot_description_xacro_path': 'robots/gen3.xacro', # Relative path within the package
+                        # Arguments passed to xacro - adjust as needed for your URDF/XACRO
+                        'xacro_args': PythonExpression([
+                            "'dof:=6 use_fake_hardware:=",
+                            use_fake_hardware,
+                            " robot_ip:=dummy1 prefix:=", # dummy1 is fine for xacro context if not used for real connection by xacro
+                            robot1_namespace, "/", # Prefix for namespacing in URDF
+                            " initial_pose_x:=", LaunchConfiguration("initial_pose_x_robot1"),
+                            " initial_pose_y:=", LaunchConfiguration("initial_pose_y_robot1"),
+                            " initial_pose_z:=", LaunchConfiguration("initial_pose_z_robot1"),
+                            " initial_pose_roll:=", LaunchConfiguration("initial_pose_roll_robot1"),
+                            " initial_pose_pitch:=", LaunchConfiguration("initial_pose_pitch_robot1"),
+                            " initial_pose_yaw:=", LaunchConfiguration("initial_pose_yaw_robot1"),
+                            " sim_gazebo:=",
+                            sim_gazebo, " sim_ignition:=",
+                            sim_ignition, " robot_controller:=",
+                            robot1_controller_name, "'"
+                        ]),
+                    }],
+                    arguments=['--ros-args', '--log-level', 'rigid_body_dynamics_controller:=debug']
                 )
             ]
         )
@@ -310,63 +307,60 @@ def generate_launch_description():
                         'gazebo_world_file': LaunchConfiguration("gazebo_world_file"),
                         'headless_rendering': LaunchConfiguration("headless_rendering"),
                     }.items()
-                # ),
-                # Node(
-                #     package=barrier_control_pkg_name,
-                #     executable='rigid_body_dynamics_controller',
-                #     name=robot2_controller_name,
-                #     output='screen',
-                #     emulate_tty=True,
-                #     parameters=[{
-                #         # --- Frame Names ---
-                #         'base_frame': f"{robot2_namespace}/base_link",
-                #         'tool_frame': f"{robot2_namespace}/end_effector_link",
-                #         # --- Controller Gains & Settings ---
-                #         # Kp gains [x, y, z, rx, ry, rz] - Tune these values!
-                #         'kp_gains': [0.1] * 6, # Reduced for slower movement
-                #         'kd_gains': [0.005]*3 + [0.005] * 3,
-                #         'jacobian_damping': 0.05, # Damping for pseudo-inverse singularity robustness (increased slightly)
-                #         'euler_input_convention': 'quat', # Convention for interpreting target orientation if given as Euler: 'xyz', 'zyx', etc.
-                #         # --- Joint Specific Settings ---
-                #         # IMPORTANT: List joint names in the order your robot model (and RTB) expects them.
-                #         'controlled_joint_names': [f'{robot2_namespace}/joint_1', f'{robot2_namespace}/joint_2', f'{robot2_namespace}/joint_3', f'{robot2_namespace}/joint_4', f'{robot2_namespace}/joint_5', f'{robot2_namespace}/joint_6'],
-                #         # Max joint velocities (rad/s) - Set based on your robot's limits!
-                #         # Example for a 6DOF arm, replace with actual values
-                #         'max_joint_velocities': [0.1] * 6, 
-                #         # --- Control Settings & Topic Names ---
-                #         'joint_limit_buffer': 0.01, # Small buffer (rad or m) for joint position limits
-                #         'control_frequency': 5.0, # Control loop frequency in Hz
-                #         'error_tolerance': [0.02] * 3 + [0.1]*3, # Pos [m], Orient [rad]
-                #         'joint_state_topic': robot2_joint_state_topic,
-                #         'target_pose_topic': robot2_target_pose_topic,
-                #         'velocity_command_topic': robot2_velocity_command_topic,
-                #         # --- Velocity Command Service Parameters ---
-                #         'use_service_velocity_command_str': use_fake_hardware.perform(context), # Pass the string directly
-                #         'arm_index': 1,
-                #         'velocity_command_service': '/send_joint_speeds', # Default, but can be explicit
-                #         # --- Robot Description ---
-                #         'robot_description_package': 'kortex_description', # Your robot description package
-                #         'robot_description_xacro_path': 'robots/gen3.xacro', # Relative path within the package
-                #         # Arguments passed to xacro - adjust as needed for your URDF/XACRO
+                ),
+                Node(
+                    package=barrier_control_pkg_name,
+                    executable='rigid_body_dynamics_controller',
+                    name=robot2_controller_name,
+                    output='screen',
+                    emulate_tty=True,
+                    parameters=[{
+                        # --- Frame Names ---
+                        'base_frame': f"{robot2_namespace}/base_link",
+                        'tool_frame': f"{robot2_namespace}/end_effector_link",
+                        # --- Controller Gains & Settings ---
+                        # Kp gains [x, y, z, rx, ry, rz] - Tune these values!
+                        'kp_gains': [0.1] * 6, # Reduced for slower movement
+                        'kd_gains': [0.005]*3 + [0.005] * 3,
+                        'jacobian_damping': 0.05, # Damping for pseudo-inverse singularity robustness (increased slightly)
+                        'euler_input_convention': 'quat', # Convention for interpreting target orientation if given as Euler: 'xyz', 'zyx', etc.
+                        # --- Joint Specific Settings ---
+                        # IMPORTANT: List joint names in the order your robot model (and RTB) expects them.
+                        'controlled_joint_names': [f'{robot2_namespace}/joint_1', f'{robot2_namespace}/joint_2', f'{robot2_namespace}/joint_3', f'{robot2_namespace}/joint_4', f'{robot2_namespace}/joint_5', f'{robot2_namespace}/joint_6'],
+                        # Max joint velocities (rad/s) - Set based on your robot's limits!
+                        'max_joint_velocities': [0.1] * 6, 
+                        # --- Control Settings & Topic Names ---
+                        'joint_limit_buffer': 0.01, # Small buffer (rad or m) for joint position limits
+                        'control_frequency': 5.0, # Control loop frequency in Hz
+                        'error_tolerance': [0.02] * 3 + [0.1]*3, # Pos [m], Orient [rad]
+                        'joint_state_topic': robot2_joint_state_topic,
+                        'target_pose_topic': robot2_target_pose_topic,
+                        'joint_trajectory_topic': robot2_joint_trajectory_topic,
+                        # --- Velocity Command Service Parameters ---
+                        'arm_index': 1,
+                        # --- Robot Description ---
+                        'robot_description_package': 'kortex_description', # Your robot description package
+                        'robot_description_xacro_path': 'robots/gen3.xacro', # Relative path within the package
+                        # Arguments passed to xacro - adjust as needed for your URDF/XACRO
 
-                #         'xacro_args': PythonExpression([
-                #             "'dof:=6 use_fake_hardware:=",
-                #             use_fake_hardware,
-                #             " robot_ip:=dummy2 prefix:=", # dummy2 is fine for xacro context
-                #             robot2_namespace, "/", # Prefix for namespacing in URDF
-                #             " initial_pose_x:=", LaunchConfiguration("initial_pose_x_robot2"),
-                #             " initial_pose_y:=", LaunchConfiguration("initial_pose_y_robot2"),
-                #             " initial_pose_z:=", LaunchConfiguration("initial_pose_z_robot2"),
-                #             " initial_pose_roll:=", LaunchConfiguration("initial_pose_roll_robot2"),
-                #             " initial_pose_pitch:=", LaunchConfiguration("initial_pose_pitch_robot2"),
-                #             " initial_pose_yaw:=", LaunchConfiguration("initial_pose_yaw_robot2"),
-                #             " sim_gazebo:=",
-                #             sim_gazebo, " sim_ignition:=",
-                #             sim_ignition, " robot_controller:=",
-                #             robot2_controller_name, "'" # Make sure spacing is correct for the final xacro string
-                #         ]),
-                #     }],
-                #     arguments=['--ros-args', '--log-level', 'rigid_body_dynamics_controller:=debug']
+                        'xacro_args': PythonExpression([
+                            "'dof:=6 use_fake_hardware:=",
+                            use_fake_hardware,
+                            " robot_ip:=dummy2 prefix:=", # dummy2 is fine for xacro context
+                            robot2_namespace, "/", # Prefix for namespacing in URDF
+                            " initial_pose_x:=", LaunchConfiguration("initial_pose_x_robot2"),
+                            " initial_pose_y:=", LaunchConfiguration("initial_pose_y_robot2"),
+                            " initial_pose_z:=", LaunchConfiguration("initial_pose_z_robot2"),
+                            " initial_pose_roll:=", LaunchConfiguration("initial_pose_roll_robot2"),
+                            " initial_pose_pitch:=", LaunchConfiguration("initial_pose_pitch_robot2"),
+                            " initial_pose_yaw:=", LaunchConfiguration("initial_pose_yaw_robot2"),
+                            " sim_gazebo:=",
+                            sim_gazebo, " sim_ignition:=",
+                            sim_ignition, " robot_controller:=",
+                            robot2_controller_name, "'" # Make sure spacing is correct for the final xacro string
+                        ]),
+                    }],
+                    arguments=['--ros-args', '--log-level', 'rigid_body_dynamics_controller:=debug']
                 )
             ]
         )

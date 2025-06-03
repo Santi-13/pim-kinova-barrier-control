@@ -6,22 +6,22 @@ from rclpy.node import Node
 import tf2_ros
 import subprocess # For running xacro command
 import os # For path joining
+import math
 
 from geometry_msgs.msg import TransformStamped, PoseStamped
-from std_msgs.msg import Float64MultiArray
+from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint # New import
+from rclpy.duration import Duration as RclpyDuration 
 from rclpy.duration import Duration
 from sensor_msgs.msg import JointState
 from ament_index_python.packages import get_package_share_directory
-from scipy.spatial.transform import Rotation as R_scipy # For Euler to Quaternion conversion
 import tempfile # For creating temporary files
 import quaternion 
 
-from service_interface.srv import SendJointSpeeds 
-
 class RigidBodyDynamicsController(Node):
     """
-    A ROS 2 node for controlling a robot arm's joint velocities based on
-    a target end-effector pose using Jacobian-based control.
+    A ROS 2 node for controlling a robot arm's joint positions based on
+    a target end-effector pose using Jacobian-based control, publishing
+    to a joint_trajectory_controller.
     """
     def __init__(self):
         super().__init__('rigid_body_dynamics_controller')
@@ -33,9 +33,8 @@ class RigidBodyDynamicsController(Node):
         self.declare_parameter('kd_gains', [0.0]*6) # Diagonal Kd gains [x,y,z,rx,ry,rz] - Start with zeros or small values
         self.declare_parameter('joint_state_topic', '/joint_states')
         self.declare_parameter('target_pose_topic', '/target_pose')
-        self.declare_parameter('velocity_command_topic', '/joint_group_velocity_controller/commands')
-        self.declare_parameter('velocity_command_service', '/send_joint_speeds')
-        self.declare_parameter('use_service_velocity_command_str', 'false') # Expecting 'true' or 'false' string
+
+        self.declare_parameter('joint_trajectory_topic', '/joint_trajectory_controller/joint_trajectory') # New
         self.declare_parameter('arm_index', 0)
         self.declare_parameter('robot_description_package', 'kortex_description')
         self.declare_parameter('robot_description_xacro_path', 'robots/gen3.xacro')
@@ -57,23 +56,16 @@ class RigidBodyDynamicsController(Node):
         self.kd = np.diag(kd_diag) # Create diagonal matrix from list
         joint_state_topic = self.get_parameter('joint_state_topic').value
         target_pose_topic = self.get_parameter('target_pose_topic').value
-        velocity_command_topic = self.get_parameter('velocity_command_topic').value
-        velocity_command_service = self.get_parameter('velocity_command_service').value
+
         self.jacobian_damping = self.get_parameter('jacobian_damping').value
         self.max_joint_velocities_np = np.array(self.get_parameter('max_joint_velocities').value)
         self.control_frequency = self.get_parameter('control_frequency').value
         self.controlled_joint_names = self.get_parameter('controlled_joint_names').value
-        self.joint_limit_buffer_val = self.get_parameter('joint_limit_buffer').value
+        self.joint_limit_buffer_fval = self.get_parameter('joint_limit_buffer').value # Renamed for clarity
         self.error_tolerance_np = np.array(self.get_parameter('error_tolerance').value)
-        self.euler_input_convention = self.get_parameter('euler_input_convention').value.lower()
-        # Convert the string parameter to boolean for use_service_command
-        use_fake_hardware_str = self.get_parameter('use_service_velocity_command_str').value
-        self.use_service_command = (use_fake_hardware_str == 'false') # Service is used if fake_hardware is 'false'
-        self.get_logger().info(f"Retrieved 'use_fake_hardware_str': {use_fake_hardware_str} (type: {type(use_fake_hardware_str)})")
-        self.get_logger().info(f"Derived 'use_service_command': {self.use_service_command} (type: {type(self.use_service_command)})")           
+        self.euler_input_convention = self.get_parameter('euler_input_convention').value.lower()     
 
-        self.arm_index_for_service = self.get_parameter('arm_index').value
-        self.velocity_command_service_name = self.get_parameter('velocity_command_service').value
+        self.arm_index = self.get_parameter('arm_index').value
 
         # --- ---
 
@@ -82,8 +74,26 @@ class RigidBodyDynamicsController(Node):
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)    
         
         ### Robot Model & Joint Info
+        min_limits = [
+            -2 * math.pi,  # joint_1 min
+            -2.41,         # joint_2 min
+            -2.66,         # joint_3 min
+            -2 * math.pi,  # joint_4 min
+            -2.23,         # joint_5 min
+            -2 * math.pi   # joint_6 min
+        ]
+
+        max_limits = [
+            2 * math.pi,   # joint_1 max
+            2.41,          # joint_2 max
+            2.66,          # joint_3 max
+            2 * math.pi,   # joint_4 max
+            2.23,          # joint_5 max
+            2 * math.pi    # joint_6 max
+        ]
+
         self.robot = None
-        self.joint_position_limits = None # Will be (2, N) numpy array [min_limits; max_limits]
+        self.joint_position_limits = np.array([min_limits, max_limits]) # Will be (2, N) numpy array [min_limits; max_limits]
         self.num_model_joints = 0
 
         ### State
@@ -105,23 +115,14 @@ class RigidBodyDynamicsController(Node):
         self.active_target_pose: PoseStamped | None = None # Store the active goal
         self.pose_error = np.zeros(6)
 
-        ### Joint Velocity Publisher
-        self.velocity_pub = self.create_publisher(
-            Float64MultiArray,
-            velocity_command_topic, # Target controller topic
-            10)
-        
-        ### Service Client for Joint Speeds
-        if self.use_service_command:
-            self.joint_speeds_service_client = self.create_client(SendJointSpeeds, self.velocity_command_service_name)
-            self._service_not_ready_logged_once = False # For logging service readiness
-            self.get_logger().info(f"Service client for SendJointSpeeds created for service '{self.velocity_command_service_name}'.")
-        else:
-            self.joint_speeds_service_client = None
-            self.get_logger().info("Sending joint speeds via service is disabled by parameter 'use_service_velocity_command'.")
-
-        # Future for async service call
-        self.future = None
+        ### Joint Trajectory Publisher (New)
+        joint_trajectory_topic = self.get_parameter('joint_trajectory_topic').value
+        self.trajectory_pub = self.create_publisher(
+            JointTrajectory,
+            joint_trajectory_topic,
+            10
+        )
+        self.get_logger().info(f"Publishing joint trajectories to: {joint_trajectory_topic}")
 
         ### Load robot model at initialization
         self.load_robot()
@@ -472,183 +473,108 @@ class RigidBodyDynamicsController(Node):
             if jacobian is None:
                 self.get_logger().warn("Jacobian not available for velocity calculation.")
                 return None
-            if pose_error is None: 
+            if pose_error is None: # Should generally not happen if called correctly
                 self.get_logger().warn("Pose Error not available for velocity calculation.")
                 return None
             if self.current_joint_velocities is None:
                 self.get_logger().warn("Current joint velocities not available for velocity calculation (Kd term).")
                 return None
-            if self.robot is None: # Needed for B(q)
-                self.get_logger().warn("Robot model not loaded. Skipping gravity compensation part of velocity calculation.")
-                # Proceed without gravity compensation if robot model isn't ready for it
-            if self.current_joint_positions is None: # Needed for G(q) and B(q)
-                self.get_logger().warn("Current joint positions not available. Skipping gravity compensation part of velocity calculation.")
 
-            # --- Calculate desired end-effector velocity (proportional-derivative control) ---
+            # --- Calculate desired end-effector velocity (proportional control) ---
             pose_error_np = pose_error.reshape(-1, 1)
 
             # --- Calculate current end-effector velocity (for derivative term) ---
             q_dot_current = self.current_joint_velocities.reshape(-1, 1)
             v_current = jacobian @ q_dot_current
+
+            # --- Combine P and D terms for desired EE velocity ---
+            # v_desired_pd = self.kp @ pose_error_np - self.kd @ v_current
             v_desired_pd = self.kp @ pose_error_np.reshape(6,1) - self.kd @ v_current.reshape(6,1)
+
             self.get_logger().debug(f"v_desired: {v_desired_pd.flatten()}")
 
             # --- Calculate joint velocities using Damped Least Squares (DLS) ---
             J_dls = jacobian.T @ np.linalg.inv(jacobian @ jacobian.T + self.jacobian_damping**2 * np.eye(6)) # DLS formula
-            q_dot_kinematic = (J_dls @ v_desired_pd).flatten() # Ensure it's 1D array
-            self.get_logger().debug(f"q_dot_kinematic (before grav comp): {q_dot_kinematic}")
+            joint_velocities_raw = J_dls @ v_desired_pd
 
-            # --- Gravity Compensation Term Calculation ---
-            gravity_comp_velocity_adjustment = np.zeros_like(q_dot_kinematic) # Default to no adjustment
-            
-            # Only attempt if robot model and current positions are available
-            if self.robot is not None and self.current_joint_positions is not None:
-                q_np = np.array(self.current_joint_positions)
-                try:
-                    # G_q is the torque vector to counteract gravity
-                    G_q = self.calculate_gravity_torques() # This calls self.robot.gravload(q_np)
+            # --- Or using standard Pseudo-Inverse ---
+            # J_pseudo_inverse = np.linalg.pinv(jacobian)
+            # joint_velocities_raw = J_pseudo_inverse @ v_desired_pd # Use PD desired velocity
 
-                    if G_q is not None:
-                        B_q = self.robot.inertia(q_np)   # Joint-space inertia matrix B(q)
-                        
-                        # Acceleration to counteract gravity: B(q) * q_ddot_comp = G(q)
-                        # So, q_ddot_comp = B(q)^-1 * G(q)
-                        q_ddot_gravity_compensation = np.linalg.solve(B_q, G_q)
-                        
-                        # Velocity adjustment over one control period dt
-                        dt = 1.0 / self.control_frequency 
-                        gravity_comp_velocity_adjustment = q_ddot_gravity_compensation * dt
-                        
-                        self.get_logger().debug(f"G(q): {G_q}")
-                        # self.get_logger().debug(f"B(q) shape: {B_q.shape}") # B(q) can be large
-                        self.get_logger().debug(f"q_ddot_for_gravity_comp: {q_ddot_gravity_compensation}")
-                        self.get_logger().debug(f"Gravity comp velocity adjustment: {gravity_comp_velocity_adjustment}")
-                    else:
-                        self.get_logger().warn("Failed to calculate G(q), skipping gravity velocity adjustment.")
-                except np.linalg.LinAlgError as e:
-                    self.get_logger().warn(f"LinAlgError during gravity compensation term calculation (e.g., B(q) singular): {e}. Using zero adjustment.")
-                except Exception as e:
-                    self.get_logger().error(f"Unexpected exception during gravity compensation term calculation: {e}. Using zero adjustment.")
-            
-            # Add gravity compensation adjustment to kinematic velocities
-            # The logic is: q_dot_final = q_dot_kinematic + (B(q)^-1 * G(q)) * dt
-            # G(q) is torque to *counteract* gravity. So B(q)^-1 * G(q) is accel *to counteract* gravity.
-            # We add this because q_dot_kinematic doesn't know about gravity. This term helps "boost" it.
-            joint_velocities_with_gravity_comp = q_dot_kinematic + gravity_comp_velocity_adjustment
-            self.get_logger().debug(f"q_dot with gravity comp: {joint_velocities_with_gravity_comp}")
+            # --- Velocity Limiting ---
+            joint_velocities_limited = np.clip(joint_velocities_raw.flatten(), -self.max_joint_velocities_np, self.max_joint_velocities_np)
 
-
-            # --- Velocity Limiting (apply to the compensated velocities) ---
-            # Ensure joint_velocities_with_gravity_comp is also flattened if it became 2D
-            joint_velocities_limited = np.clip(joint_velocities_with_gravity_comp.flatten(), 
-                                               -self.max_joint_velocities_np, 
-                                               self.max_joint_velocities_np)
-
-            # --- Joint Position Limit Handling (applied to already velocity-limited commands) ---
+            # --- Joint Position Limit Handling ---
             if self.joint_position_limits is not None and \
                self.current_joint_positions is not None and \
-               len(joint_velocities_limited) == self.num_model_joints:
+               len(joint_velocities_limited) == self.num_model_joints: # Ensure consistent length
                 
+                # Make a copy to modify based on position limits
                 velocities_after_pos_limits = np.copy(joint_velocities_limited) 
+
                 for i in range(self.num_model_joints):
                     q_i = self.current_joint_positions[i]
                     v_i = velocities_after_pos_limits[i] 
+
                     q_min_i = self.joint_position_limits[0, i]
                     q_max_i = self.joint_position_limits[1, i]
                     
-                    if q_i <= (q_min_i + self.joint_limit_buffer_val) and v_i < 0:
+                    if q_i <= (q_min_i + self.joint_limit_buffer_fval) and v_i < 0:
                         self.get_logger().debug(f"Joint {self.controlled_joint_names[i]} ({i}) near lower limit (q={q_i:.3f} vs lim={q_min_i:.3f}, buff={self.joint_limit_buffer_val:.3f}) with v={v_i:.3f}. Clamping v to 0.")
                         velocities_after_pos_limits[i] = 0.0
-                    elif q_i >= (q_max_i - self.joint_limit_buffer_val) and v_i > 0:
+                    elif q_i >= (q_max_i - self.joint_limit_buffer_fval) and v_i > 0:
                         self.get_logger().debug(f"Joint {self.controlled_joint_names[i]} ({i}) near upper limit (q={q_i:.3f} vs lim={q_max_i:.3f}, buff={self.joint_limit_buffer_val:.3f}) with v={v_i:.3f}. Clamping v to 0.")
                         velocities_after_pos_limits[i] = 0.0
-                joint_velocities_limited = velocities_after_pos_limits
-            
-            self.get_logger().debug(f"Final Joint Velocities to publish: {joint_velocities_limited}")
-            return joint_velocities_limited
+                joint_velocities_limited = velocities_after_pos_limits # Assign back the potentially modified velocities
+            self.get_logger().debug(f"Raw Vels: {joint_velocities_raw.flatten()}, Final Limited Vels: {joint_velocities_limited}")
+            return joint_velocities_limited # Return the final limited velocities
         
-        except Exception as e:
-            self.get_logger().error(f"General error in calculate_and_limit_joint_velocities: {e}")
-            return None
-        
-
         except Exception as e:
             self.get_logger().error(f"Error calculating/limiting joint velocities: {e}")
             return None
-        
-    def send_joint_speeds_via_service(self, joint_velocities_rad_s: np.ndarray):
-        """Sends joint velocities (rad/s) via the SendJointSpeeds service."""
-        if not self.use_service_command or self.joint_speeds_service_client is None:
+
+
+    def publish_target_joint_positions(self, target_positions: np.ndarray | None):
+        """Publishes the calculated target joint positions as a JointTrajectory."""
+        if target_positions is None:
+            # self.get_logger().warn("Target positions are None. Not publishing.")
+            # In a real scenario, you might want to publish the current positions to "hold"
+            # For now, if None, we assume the JTC will hold its last valid trajectory point.
             return
 
-        if len(joint_velocities_rad_s) != 6:
+        if not self.controlled_joint_names:
+            self.get_logger().error("Controlled joint names not set. Cannot publish trajectory.")
+            return
+
+        if len(target_positions) != len(self.controlled_joint_names):
             self.get_logger().error(
-                f"Cannot send joint speeds via service: expected 6 velocities, got {len(joint_velocities_rad_s)}. "
-                f"Ensure 'controlled_joint_names' matches a 6-DOF robot for this service.",
-                throttle_duration_sec=5
+                f"Mismatch between target_positions length ({len(target_positions)}) "
+                f"and controlled_joint_names length ({len(self.controlled_joint_names)}). "
+                f"Cannot publish trajectory."
             )
             return
 
-        if not self.joint_speeds_service_client.service_is_ready():
-            if not self._service_not_ready_logged_once: # Log only once if not ready
-                self.get_logger().warn(
-                    f"Service '{self.joint_speeds_service_client.srv_name}' not available. Cannot send joint speeds.",
-                )
-                self._service_not_ready_logged_once = True
-            return
-        self._service_not_ready_logged_once = False # Reset if ready
+        traj_msg = JointTrajectory()
+        traj_msg.header.stamp = self.get_clock().now().to_msg()
+        # Ensure joint names here match what joint_trajectory_controller expects.
+        # These should be the namespaced joint names if your JTC is configured for them.
+        traj_msg.joint_names = self.controlled_joint_names
 
-        # Convert rad/s to deg/s
-        joint_velocities_deg_s = joint_velocities_rad_s * (180.0 / np.pi)
+        point = JointTrajectoryPoint()
+        point.positions = target_positions.tolist()
+        
+        # time_from_start is crucial. It tells the JTC how quickly to reach this point.
+        # For streaming targets, this is typically the control period.
+        point.time_from_start = RclpyDuration(seconds=(1.0 / self.control_frequency)).to_msg()
+        
+        # Optional: You can also set velocities if your JTC uses them and you have good estimates.
+        # If self.current_joint_velocities is reliable and represents the velocities for the *target* point:
+        # point.velocities = self.current_joint_velocities.tolist() # Or the calculated limited joint_velocities
+        # Otherwise, leave it empty and let JTC handle velocity profiling.
 
-        # Example Kortex API limit (from KinovaDualArmController) for user awareness
-        kortex_api_deg_s_limit = 20.0 
-        if any(abs(v) > kortex_api_deg_s_limit for v in joint_velocities_deg_s):
-            self.get_logger().warn(
-                f"Calculated joint speeds {['{:.2f}'.format(v) for v in joint_velocities_deg_s]} (deg/s) exceed the "
-                f"example Kortex API limit of {kortex_api_deg_s_limit} deg/s. "
-                f"Command will be sent, but might be rejected or capped by the robot/service.",
-                throttle_duration_sec=10
-            )
-
-        request = SendJointSpeeds.Request()
-        request.arm_index = self.arm_index_for_service
-        request.joint_speeds = joint_velocities_deg_s.tolist()
-        request.duration = 1.0 / self.control_frequency # Duration for one control cycle
-        request.control_frequency = int(self.control_frequency) # Kortex API internal frequency
-
-        self.future = self.joint_speeds_service_client.call_async(request)
-        self.future.add_done_callback(self.joint_speeds_service_response_callback)
-        self.get_logger().debug(f"Sent joint speeds to service for arm {request.arm_index}: {['{:.2f}'.format(v) for v in request.joint_speeds]} deg/s, duration {request.duration:.3f}s, freq {request.control_frequency}Hz")
-
-    def joint_speeds_service_response_callback(self, future):
-        """Callback for the SendJointSpeeds service response."""
-        try:
-            response = future.result()
-            if response.success:
-                self.get_logger().debug(f"Service call SendJointSpeeds successful: {response.message}")
-            else:
-                self.get_logger().warn(f"Service call SendJointSpeeds failed: {response.message}")
-        except Exception as e:
-            self.get_logger().error(f"Exception during SendJointSpeeds service call: {e}")
-
-
-    def publish_velocities(self, velocities: np.ndarray | None):
-        """Publishes the calculated joint velocities."""
-        # This method is now only called when 'velocities' is a valid command.
-        if velocities is None:
-            self.get_logger().error("publish_velocities called with None, this should not happen with the new logic. No command sent.")
-            return
-        final_velocities_to_publish = velocities
-
-        if self.use_service_command:
-            # Send via service if enabled
-            self.send_joint_speeds_via_service(final_velocities_to_publish)
-        else:
-            # Otherwise, publish to the topic
-            msg = Float64MultiArray()
-            msg.data = final_velocities_to_publish.tolist()
-            self.velocity_pub.publish(msg)
+        traj_msg.points.append(point)
+        self.trajectory_pub.publish(traj_msg)
+        self.get_logger().debug(f"Arm {self.arm_index} publishing trajectory: names {traj_msg.joint_names}, pos {point.positions}, time {point.time_from_start.sec}.{point.time_from_start.nanosec}")
 
     def control_loop_callback(self):
         """Main control loop executed at a fixed frequency."""
@@ -674,10 +600,11 @@ class RigidBodyDynamicsController(Node):
         # Check if target is reached within tolerance
         if np.all(np.abs(self.pose_error) < self.error_tolerance_np):
             self.get_logger().info(f"Target reached within tolerance. Pose error: {self.pose_error}. Controller is now idle.")
+            self.publish_target_joint_positions(self.current_joint_positions)
             self.active_target_pose = None # Deactivate target until a new one arrives
-            return # Stop sending commands
+            return 
 
-        # --- If target not reached, calculate and publish velocities ---
+        # --- If target not reached, calculate and publish pose ---
         jacobian = self.calculate_jacobian()
         if jacobian is None:
             self.get_logger().warn("Jacobian calculation failed. Skipping velocity command.", throttle_duration_sec=5)
@@ -688,7 +615,34 @@ class RigidBodyDynamicsController(Node):
             self.get_logger().warn("Joint velocity calculation failed. Skipping velocity command.", throttle_duration_sec=5)
             return
             
-        self.publish_velocities(joint_velocities)
+        # --- Integrate velocities to get target joint positions ---
+        dt = 1.0 / self.control_frequency
+        delta_joint_positions = joint_velocities * dt
+
+        # Ensure current_joint_positions is not None before operation
+        if self.current_joint_positions is None:
+            self.get_logger().warn(f"Arm {self.arm_index} - Current joint positions are None. Cannot calculate target positions.")
+            return
+            
+        target_joint_positions = self.current_joint_positions + delta_joint_positions
+
+        # --- Apply joint position limits to the target_joint_positions before sending ---
+        # This is a safeguard; the joint_trajectory_controller will also respect limits.
+        if self.joint_position_limits is not None:
+            min_limits = self.joint_position_limits[0, :]
+            max_limits = self.joint_position_limits[1, :]
+            # Apply buffer to avoid commanding exactly to the limit
+            buffered_min_limits = min_limits + self.joint_limit_buffer_fval
+            buffered_max_limits = max_limits - self.joint_limit_buffer_fval
+            
+            # Ensure target_joint_positions and limits have compatible shapes
+            if target_joint_positions.shape == buffered_min_limits.shape and \
+               target_joint_positions.shape == buffered_max_limits.shape:
+                target_joint_positions = np.clip(target_joint_positions, buffered_min_limits, buffered_max_limits)
+            else:
+                self.get_logger().warn(f"Arm {self.arm_index} - Shape mismatch for joint limit clipping. Skipping clip.")
+
+        self.publish_target_joint_positions(target_joint_positions)
 
 def main():
     rclpy.init()

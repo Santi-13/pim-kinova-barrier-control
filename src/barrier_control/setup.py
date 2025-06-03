@@ -39,11 +39,10 @@ setup(
     },
     entry_points={
         'console_scripts': [
-            'pose_listener = barrier_control.pose_listener:main',
             'rigid_body_dynamics_controller = barrier_control.rigid_body_dynamics_controller:main',
-            'state_listener = barrier_control.state_listener:main',
             'target_handler = barrier_control.target_handler:main',
             'kortex_dual_arm_node = barrier_control.kortex_dual_arm_node:main',
+            'gripper_tcp_node = barrier_control.gripper_tcp_node:main',
         ],
     },
 )
