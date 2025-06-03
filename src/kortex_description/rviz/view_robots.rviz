@@ -9,6 +9,8 @@ Panels:
         - /RobotModel1
         - /RobotModel2
         - /RobotModel2/Description Topic1
+        - /TF1
+        - /TF1/Frames1
       Splitter Ratio: 0.5
     Tree Height: 778
   - Class: rviz_common/Selection
@@ -191,6 +193,78 @@ Visualization Manager:
       Update Interval: 0
       Value: true
       Visual Enabled: true
+    - Class: rviz_default_plugins/TF
+      Enabled: true
+      Frame Timeout: 15
+      Frames:
+        All Enabled: false
+        robot1/base_link:
+          Value: true
+        robot1/bicep_link:
+          Value: false
+        robot1/bracelet_link:
+          Value: false
+        robot1/end_effector_link:
+          Value: true
+        robot1/forearm_link:
+          Value: false
+        robot1/shoulder_link:
+          Value: false
+        robot1/spherical_wrist_1_link:
+          Value: false
+        robot1/spherical_wrist_2_link:
+          Value: false
+        robot1/tool_frame:
+          Value: false
+        robot2/base_link:
+          Value: true
+        robot2/bicep_link:
+          Value: false
+        robot2/bracelet_link:
+          Value: false
+        robot2/end_effector_link:
+          Value: false
+        robot2/forearm_link:
+          Value: false
+        robot2/shoulder_link:
+          Value: false
+        robot2/spherical_wrist_1_link:
+          Value: false
+        robot2/spherical_wrist_2_link:
+          Value: false
+        robot2/tool_frame:
+          Value: true
+        world:
+          Value: false
+      Marker Scale: 1
+      Name: TF
+      Show Arrows: true
+      Show Axes: true
+      Show Names: false
+      Tree:
+        world:
+          robot1/base_link:
+            robot1/shoulder_link:
+              robot1/bicep_link:
+                robot1/forearm_link:
+                  robot1/spherical_wrist_1_link:
+                    robot1/spherical_wrist_2_link:
+                      robot1/bracelet_link:
+                        robot1/end_effector_link:
+                          robot1/tool_frame:
+                            {}
+          robot2/base_link:
+            robot2/shoulder_link:
+              robot2/bicep_link:
+                robot2/forearm_link:
+                  robot2/spherical_wrist_1_link:
+                    robot2/spherical_wrist_2_link:
+                      robot2/bracelet_link:
+                        robot2/end_effector_link:
+                          robot2/tool_frame:
+                            {}
+      Update Interval: 0
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
@@ -237,7 +311,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 3.208137035369873
+      Distance: 2.093163013458252
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -252,10 +326,10 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.320398211479187
+      Pitch: 0.5253980159759521
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 5.633546352386475
+      Yaw: 5.948552131652832
     Saved: ~
 Window Geometry:
   Displays:

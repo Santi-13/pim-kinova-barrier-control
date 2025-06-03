@@ -402,70 +402,6 @@ class RigidBodyDynamicsController(Node):
             self.get_logger().error(f"Error calculating Jacobian: {e}")
             return None
         
-    def calculate_gravity_torques(self) -> np.ndarray | None:
-        """Calculates the joint torques required to counteract gravity."""
-        try:
-            if self.robot is None:
-                self.get_logger().warn("Robot model not loaded yet. Skipping gravity torque calculation.")
-                return None            
-            if self.current_joint_positions is None:
-                self.get_logger().warn("Joint positions not yet received. Skipping gravity torque calculation.")
-                return None
-
-            # Add this check for None within the list/array:
-            if any(p is None for p in self.current_joint_positions):
-                self.get_logger().error(f"current_joint_positions contains None values: {self.current_joint_positions}. Skipping gravity torque calculation.")
-                return None
-
-            if self.robot:
-                self.get_logger().info(f"Robot's configured gravity vector (self.robot.gravity): {self.robot.gravity}")
-                self.get_logger().info(f"Number of joints (self.robot.n): {self.robot.n}")
-                self.get_logger().info(f"Number of links (len(self.robot.links)): {len(self.robot.links)}")
-            else:
-                self.get_logger().warn("self.robot is None, cannot check gravity vector.")
-            
-                
-            # Attempt to create q_np and log it
-            try:
-                if self.robot and self.robot.links:
-                    self.get_logger().info("Inspecting robot link dynamic parameters:")
-                    for i, link in enumerate(self.robot.links):
-                        link_name = link.name if hasattr(link, 'name') else f"Link {i}"
-                        mass = link.m if hasattr(link, 'm') else "N/A"
-                        com = link.r if hasattr(link, 'r') else "N/A" # Center of Mass vector
-                        self.get_logger().info(f"  {link_name}: mass (m) = {mass}, CoM (r) = {com}")
-                else:
-                    self.get_logger().warn("Cannot inspect links: self.robot or self.robot.links is not available.")
-                # Force dtype to float; this will error if None is present and cannot be converted to NaN implicitly by some np versions
-                q_np = np.array(self.current_joint_positions, dtype=float) 
-                self.get_logger().info(f"Input to gravload: q_np = {q_np}, type = {type(q_np)}, dtype = {q_np.dtype}") # IMPORTANT LOG
-            except ValueError as ve:
-                self.get_logger().error(f"ValueError when creating q_np from current_joint_positions ({self.current_joint_positions}): {ve}. Skipping gravity torque calculation.")
-                return None
-            # self.get_logger().info("Current Joint Positions type: " + str(type(self.current_joint_positions)))
-            # self.get_logger().info("Current joint positions for gravity torque calculation: ")
-            # self.get_logger().info(self.current_joint_positions)
-            try:
-                q_zero = np.zeros(self.num_model_joints, dtype=float)
-                self.get_logger().info(f"Testing gravload with zero config: {q_zero}")
-                test_grav_torques = self.robot.gravload(q_zero)
-                self.get_logger().info(f"Test gravload with zero config successful: {test_grav_torques}")
-            except Exception as e_test:
-                self.get_logger().error(f"Test gravload with zero config FAILED: {e_test}")
-            
-            gravity_torques = self.robot.gravload(q_np) # Returns an N-element numpy array
-
-            if gravity_torques.shape[0] == self.num_model_joints:
-                self.get_logger().debug(f"Gravity torques calculated: {gravity_torques}")
-                return gravity_torques
-            else:
-                self.get_logger().error(f"Gravity torques shape mismatch: {gravity_torques.shape}, expected ({self.num_model_joints},)")
-                return None
-        except Exception as e:
-            self.get_logger().error(f"Error calculating gravity torques: {e}")
-            return None
-
-        
     def calculate_and_limit_joint_velocities(self, jacobian: np.ndarray, pose_error: np.ndarray) -> np.ndarray | None:
         """Calculates and limits joint velocities based on Jacobian, pose error, and current joint velocities (for Kd term)."""
         try:
@@ -520,10 +456,10 @@ class RigidBodyDynamicsController(Node):
                     q_max_i = self.joint_position_limits[1, i]
                     
                     if q_i <= (q_min_i + self.joint_limit_buffer_fval) and v_i < 0:
-                        self.get_logger().debug(f"Joint {self.controlled_joint_names[i]} ({i}) near lower limit (q={q_i:.3f} vs lim={q_min_i:.3f}, buff={self.joint_limit_buffer_val:.3f}) with v={v_i:.3f}. Clamping v to 0.")
+                        self.get_logger().debug(f"Joint {self.controlled_joint_names[i]} ({i}) near lower limit (q={q_i:.3f} vs lim={q_min_i:.3f}, buff={self.joint_limit_buffer_fval:.3f}) with v={v_i:.3f}. Clamping v to 0.")
                         velocities_after_pos_limits[i] = 0.0
                     elif q_i >= (q_max_i - self.joint_limit_buffer_fval) and v_i > 0:
-                        self.get_logger().debug(f"Joint {self.controlled_joint_names[i]} ({i}) near upper limit (q={q_i:.3f} vs lim={q_max_i:.3f}, buff={self.joint_limit_buffer_val:.3f}) with v={v_i:.3f}. Clamping v to 0.")
+                        self.get_logger().debug(f"Joint {self.controlled_joint_names[i]} ({i}) near upper limit (q={q_i:.3f} vs lim={q_max_i:.3f}, buff={self.joint_limit_buffer_fval:.3f}) with v={v_i:.3f}. Clamping v to 0.")
                         velocities_after_pos_limits[i] = 0.0
                 joint_velocities_limited = velocities_after_pos_limits # Assign back the potentially modified velocities
             self.get_logger().debug(f"Raw Vels: {joint_velocities_raw.flatten()}, Final Limited Vels: {joint_velocities_limited}")
