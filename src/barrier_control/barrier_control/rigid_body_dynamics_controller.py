@@ -76,19 +76,19 @@ class RigidBodyDynamicsController(Node):
         ### Robot Model & Joint Info
         min_limits = [
             -2 * math.pi,  # joint_1 min
-            -2.41,         # joint_2 min
-            -2.66,         # joint_3 min
+            -2.2,         # joint_2 min
+            -2.5,         # joint_3 min
             -2 * math.pi,  # joint_4 min
-            -2.23,         # joint_5 min
+            -2.08,         # joint_5 min
             -2 * math.pi   # joint_6 min
         ]
 
         max_limits = [
             2 * math.pi,   # joint_1 max
-            2.41,          # joint_2 max
-            2.66,          # joint_3 max
+            2.2,          # joint_2 max
+            2.5,          # joint_3 max
             2 * math.pi,   # joint_4 max
-            2.23,          # joint_5 max
+            2.08,          # joint_5 max
             2 * math.pi    # joint_6 max
         ]
 
@@ -132,6 +132,18 @@ class RigidBodyDynamicsController(Node):
             timer_period = 1.0 / self.control_frequency
             self.control_timer = self.create_timer(timer_period, self.control_loop_callback)
             self.get_logger().info(f"Control loop running at {self.control_frequency} Hz.")
+
+        ### Send Home Position on Startup
+        if self.current_joint_positions is None:
+            self.get_logger().info("Current joint positions not set. Sending home position on startup.")
+            # Send home position (zeros) if no joint states received yet
+            home_position = [0.0, 15.0, -130.0, 0.0, 55.0, 90.0] # home position in degrees
+            # Convert to radians
+            home_position_rad = np.radians(home_position)
+            self.get_logger().info(f"Home position (rad): {home_position_rad}, Home position (deg): {home_position}")
+            self.publish_target_joint_positions(home_position_rad, time_from_start=5.0)
+        else:
+            self.get_logger().info(f"Current joint positions already set: {self.current_joint_positions}. Not sending home position on startup.")
     
     def get_current_pose_from_tf(self)-> PoseStamped | None:
         """Fetches the current pose of the tool_frame relative to the base_frame."""
@@ -470,7 +482,7 @@ class RigidBodyDynamicsController(Node):
             return None
 
 
-    def publish_target_joint_positions(self, target_positions: np.ndarray | None):
+    def publish_target_joint_positions(self, target_positions: np.ndarray | None, time_from_start: float = 0.1):
         """Publishes the calculated target joint positions as a JointTrajectory."""
         if target_positions is None:
             # self.get_logger().warn("Target positions are None. Not publishing.")
@@ -501,7 +513,7 @@ class RigidBodyDynamicsController(Node):
         
         # time_from_start is crucial. It tells the JTC how quickly to reach this point.
         # For streaming targets, this is typically the control period.
-        point.time_from_start = RclpyDuration(seconds=(1.0 / self.control_frequency)).to_msg()
+        point.time_from_start = RclpyDuration(seconds=time_from_start).to_msg()
         
         # Optional: You can also set velocities if your JTC uses them and you have good estimates.
         # If self.current_joint_velocities is reliable and represents the velocities for the *target* point:
@@ -536,7 +548,8 @@ class RigidBodyDynamicsController(Node):
         # Check if target is reached within tolerance
         if np.all(np.abs(self.pose_error) < self.error_tolerance_np):
             self.get_logger().info(f"Target reached within tolerance. Pose error: {self.pose_error}. Controller is now idle.")
-            self.publish_target_joint_positions(self.current_joint_positions)
+            time_from_start = (1.0 / self.control_frequency)
+            self.publish_target_joint_positions(self.current_joint_positions, time_from_start) # Publish current positions to hold
             self.active_target_pose = None # Deactivate target until a new one arrives
             return 
 
@@ -578,7 +591,8 @@ class RigidBodyDynamicsController(Node):
             else:
                 self.get_logger().warn(f"Arm {self.arm_index} - Shape mismatch for joint limit clipping. Skipping clip.")
 
-        self.publish_target_joint_positions(target_joint_positions)
+        time_from_start = (1.0 / self.control_frequency)
+        self.publish_target_joint_positions(target_joint_positions, time_from_start)
 
 def main():
     rclpy.init()

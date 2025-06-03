@@ -320,8 +320,8 @@ def generate_launch_description():
                         'tool_frame': f"{robot2_namespace}/end_effector_link",
                         # --- Controller Gains & Settings ---
                         # Kp gains [x, y, z, rx, ry, rz] - Tune these values!
-                        'kp_gains': [0.1] * 6, # Reduced for slower movement
-                        'kd_gains': [0.005]*3 + [0.005] * 3,
+                        'kp_gains': [0.2] * 6, # Reduced for slower movement
+                        'kd_gains': [0.01]*3 + [0.01] * 3,
                         'jacobian_damping': 0.05, # Damping for pseudo-inverse singularity robustness (increased slightly)
                         'euler_input_convention': 'quat', # Convention for interpreting target orientation if given as Euler: 'xyz', 'zyx', etc.
                         # --- Joint Specific Settings ---
@@ -354,7 +354,7 @@ def generate_launch_description():
                             " initial_pose_roll:=", LaunchConfiguration("initial_pose_roll_robot2"),
                             " initial_pose_pitch:=", LaunchConfiguration("initial_pose_pitch_robot2"),
                             " initial_pose_yaw:=", LaunchConfiguration("initial_pose_yaw_robot2"),
-                            " sim_gazebo:=",
+                            " sim_gazebo:=", 
                             sim_gazebo, " sim_ignition:=",
                             sim_ignition, " robot_controller:=",
                             robot2_controller_name, "'" # Make sure spacing is correct for the final xacro string
@@ -372,6 +372,26 @@ def generate_launch_description():
         return robot_controllers
 
     ld.add_action(OpaqueFunction(function=launch_rigid_body_dynamics_controller))
+
+    # robot1_fault_clearer_node = Node(
+    #     package=barrier_control_pkg_name,
+    #     executable='fault_clearer_node', # Name of the executable script
+    #     name='robot1_fault_clearer',       # Unique ROS node name
+    #     output='screen',
+    #     emulate_tty=True,
+    #     parameters=[{'robot_namespace_for_fault_clearer': robot1_namespace}]
+    # )
+    # ld.add_action(robot1_fault_clearer_node)
+
+    # robot2_fault_clearer_node = Node(
+    #     package=barrier_control_pkg_name,
+    #     executable='fault_clearer_node',
+    #     name='robot2_fault_clearer',
+    #     output='screen',
+    #     emulate_tty=True,
+    #     parameters=[{'robot_namespace_for_fault_clearer': robot2_namespace}]
+    # )
+    # ld.add_action(robot2_fault_clearer_node)
 
     # # --- Conditionally launch Kortex Dual Arm Node for real robot control ---
     # def launch_kortex_node_conditionally(context):

@@ -319,9 +319,8 @@ def launch_setup(context, *args, **kwargs):
         package="controller_manager",
         executable="spawner",
         arguments=[fault_controller, "-c", "controller_manager"],
-        condition=IfCondition(PythonExpression([
-            "'", use_internal_bus_gripper_comm, "' == 'true'", # Check internal bus comm is true
-        ])),
+        condition=IfCondition(use_internal_bus_gripper_comm),
+
     )
 
     nodes_to_start = [
@@ -545,13 +544,13 @@ def generate_launch_description():
     #         description="Robot hand controller to start.",
     #     )
     # )
-    # declared_arguments.append(
-    #     DeclareLaunchArgument(
-    #         "fault_controller",
-    #         default_value="fault_controller",
-    #         description="Name of the 'fault controller.",
-    #     )
-    # )
+    declared_arguments.append(
+        DeclareLaunchArgument(
+            "fault_controller",
+            default_value="fault_controller",
+            description="Name of the 'fault controller.",
+        )
+    )
     declared_arguments.append(
         DeclareLaunchArgument("launch_rviz", default_value="true", description="Launch RViz?")
     )
