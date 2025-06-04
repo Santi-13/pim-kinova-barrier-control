@@ -154,27 +154,37 @@ def generate_launch_description():
     sim_ignition = LaunchConfiguration('sim_ignition')
     use_sim_time = LaunchConfiguration('use_sim_time')
 
-    # --- Robot 1 Configuration ---
-    robot1_namespace = 'robot1'
-    robot1_controller_name = 'joint_trajectory_controller'
-    robot1_controller_file = 'robot1_controllers.yaml'
-    robot1_target_pose_topic = 'target_pose' # Relative topic name within namespace
-    robot1_joint_state_topic = 'joint_states' # Relative topic name within namespace
-    robot1_joint_trajectory_topic = 'joint_trajectory_controller/joint_trajectory' # Relative topic name  
-
-    # --- Robot 2 Configuration ---
-    robot2_namespace = 'robot2'
-    robot2_controller_name = 'joint_trajectory_controller'
-    robot2_controller_file = 'robot2_controllers.yaml'
-    robot2_target_pose_topic = 'target_pose' # Can be the same relative name
-    robot2_joint_state_topic = 'joint_states' # Can be the same relative name
-    robot2_joint_trajectory_topic = 'joint_trajectory_controller/joint_trajectory' # Can be the same relative name
+    
 
     # --- Create Launch Description ---
     ld = LaunchDescription(declared_arguments)
 
     
     def launch_rigid_body_dynamics_controller(context):
+        # --- Robot 1 Configuration ---
+        robot1_namespace = 'robot1'
+        robot1_controller_name = 'joint_trajectory_controller' \
+            if use_fake_hardware.perform(context) == 'false' \
+            else 'robot1_controllers' 
+        robot1_controller_file = 'robot1_controllers.yaml'
+        robot1_target_pose_topic = 'target_pose' # Relative topic name within namespace
+        robot1_joint_state_topic = 'joint_states' # Relative topic name within namespace
+        robot1_joint_trajectory_topic = 'joint_trajectory_controller/joint_trajectory' \
+            if use_fake_hardware.perform(context) == 'false' \
+            else 'robot1_controllers/commands' 
+
+        # --- Robot 2 Configuration ---
+        robot2_namespace = 'robot2'
+        robot2_controller_name = 'joint_trajectory_controller' \
+            if use_fake_hardware.perform(context) == 'false' \
+            else 'robot2_controllers' 
+        robot2_controller_file = 'robot2_controllers.yaml'
+        robot2_target_pose_topic = 'target_pose' # Can be the same relative name
+        robot2_joint_state_topic = 'joint_states' # Can be the same relative name
+        robot2_joint_trajectory_topic = 'joint_trajectory_controller/joint_trajectory' \
+            if use_fake_hardware.perform(context) == 'false' \
+            else 'robot2_controllers/commands' 
+        
         # --- Robot 1 Group ---    
         robot1_group = GroupAction(
             actions=[
