@@ -40,15 +40,9 @@
 
         <xacro:unless value="${sim_ignition or sim_gazebo}">
           <xacro:if value="${use_fake_hardware}">
-            <!-- Your custom hardware interface -->
-            <plugin>kortex_description/RobotSystem</plugin>
-            <param name="command_interfaces">
-              - velocity
-            </param>
-            <param name="state_interfaces">
-              - position
-              - velocity
-            </param>
+            <plugin>mock_components/GenericSystem</plugin>
+            <param name="fake_sensor_commands">${fake_sensor_commands}</param>
+            <param name="state_following_offset">0.0</param>
           </xacro:if>
           <xacro:unless value="${use_fake_hardware}">
             <!-- Real hardware interface -->

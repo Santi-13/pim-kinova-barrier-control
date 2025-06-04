@@ -147,7 +147,7 @@ def generate_launch_description():
 
     # --- Common Paths ---
     kortex_bringup_pkg_path = get_package_share_directory('kortex_bringup')
-    gen3_launch_file = os.path.join(kortex_bringup_pkg_path, 'launch', 'gen3.launch.py')
+    gen3_launch_file = PythonLaunchDescriptionSource([os.path.join(kortex_bringup_pkg_path, 'launch', 'gen3.launch.py')])
     barrier_control_pkg_name = 'barrier_control'
     use_fake_hardware = LaunchConfiguration('use_fake_hardware')
     sim_gazebo = LaunchConfiguration('sim_gazebo')
@@ -164,26 +164,32 @@ def generate_launch_description():
         # --- Robot 1 Configuration ---
         robot1_namespace = 'robot1'
         robot1_controller_name = 'joint_trajectory_controller' \
-            if use_fake_hardware.perform(context) == 'false' \
-            else 'robot1_controllers' 
+            # if use_fake_hardware.perform(context) == 'false' \
+            # else 'robot1_controllers' 
         robot1_controller_file = 'robot1_controllers.yaml'
         robot1_target_pose_topic = 'target_pose' # Relative topic name within namespace
         robot1_joint_state_topic = 'joint_states' # Relative topic name within namespace
         robot1_joint_trajectory_topic = 'joint_trajectory_controller/joint_trajectory' \
+            # if use_fake_hardware.perform(context) == 'false' \
+            # else 'robot1_controllers/commands' 
+        robot1_ip = LaunchConfiguration('robot1_ip_real') \
             if use_fake_hardware.perform(context) == 'false' \
-            else 'robot1_controllers/commands' 
+            else 'dummy1' # Use dummy IP for fake hardware
 
         # --- Robot 2 Configuration ---
         robot2_namespace = 'robot2'
         robot2_controller_name = 'joint_trajectory_controller' \
-            if use_fake_hardware.perform(context) == 'false' \
-            else 'robot2_controllers' 
+            # if use_fake_hardware.perform(context) == 'false' \
+            # else 'robot2_controllers' 
         robot2_controller_file = 'robot2_controllers.yaml'
         robot2_target_pose_topic = 'target_pose' # Can be the same relative name
         robot2_joint_state_topic = 'joint_states' # Can be the same relative name
         robot2_joint_trajectory_topic = 'joint_trajectory_controller/joint_trajectory' \
+            # if use_fake_hardware.perform(context) == 'false' \
+            # else 'robot2_controllers/commands' 
+        robot2_ip = LaunchConfiguration('robot2_ip_real') \
             if use_fake_hardware.perform(context) == 'false' \
-            else 'robot2_controllers/commands' 
+            else 'dummy2' # Use dummy IP for fake hardware
         
         # --- Robot 1 Group ---    
         robot1_group = GroupAction(
@@ -193,14 +199,14 @@ def generate_launch_description():
 
                 # Include kortex_bringup for Robot 1
                 IncludeLaunchDescription(
-                    PythonLaunchDescriptionSource(gen3_launch_file),
+                    gen3_launch_file, # Use the variable defined outside the function
                     launch_arguments={
                         'dof': '6',
                         'use_fake_hardware': use_fake_hardware,
                         'sim_gazebo': sim_gazebo,
                         'sim_ignition': sim_ignition,
                         'use_sim_time': use_sim_time,
-                        'robot_ip': LaunchConfiguration('robot1_ip_real'), # Use unique dummy IPs if needed, though often not critical for fake_hardware
+                        'robot_ip': robot1_ip, # Use unique dummy IPs if needed, though often not critical for fake_hardware
                         'prefix': f"{robot1_namespace}/", # Pass the prefix argument with a trailing slash
                         'namespace': f"/{robot1_namespace}", # Namespace for the robot
                         # Initial pose for Robot 1
@@ -212,13 +218,14 @@ def generate_launch_description():
                         'initial_pose_yaw': LaunchConfiguration("initial_pose_yaw_robot1"),
                         'controllers_file': robot1_controller_file,
                         'robot_controller': robot1_controller_name, # Specify this controller
+
                         'rviz_file': 'view_robots.rviz', # Specify the RViz file for Robots
                         'description_package': LaunchConfiguration("description_package_robot1"),
                         'launch_rviz': LaunchConfiguration("launch_rviz_robot1"), # Pass the declared argument
                         # gen3.launch should not start Gazebo if dual_launch is managing it (when sim_gazebo or sim_ignition is true for dual_launch)
-                        'launch_gazebo_server_client': PythonExpression(
-                            ["'false' if ('", sim_gazebo, "' == 'true' or '", sim_ignition, "' == 'true') else 'true'"]
-                        ),
+                        # 'launch_gazebo_server_client': PythonExpression(
+                        #     ["'false' if ('", sim_gazebo, "' == 'true' or '", sim_ignition, "' == 'true') else 'true'"]
+                        # ),
                         'gazebo_world_file': LaunchConfiguration("gazebo_world_file"),
                         'headless_rendering': LaunchConfiguration("headless_rendering"),
                     }.items()
@@ -287,14 +294,14 @@ def generate_launch_description():
 
                 # Include kortex_bringup for Robot 1
                 IncludeLaunchDescription(
-                    PythonLaunchDescriptionSource(gen3_launch_file),
+                    gen3_launch_file, # Use the variable defined outside the function
                     launch_arguments={
                         'dof': '6',
                         'use_fake_hardware': use_fake_hardware,
                         'sim_gazebo': 'false', # Pass the main sim_gazebo flag
                         'sim_ignition': 'false', # Pass the main sim_ignition flag
                         'use_sim_time': 'false',
-                        'robot_ip': LaunchConfiguration('robot2_ip_real').perform(context), # Use unique dummy IPs if needed, though often not critical for fake_hardware
+                        'robot_ip': robot2_ip, # Use unique dummy IPs if needed, though often not critical for fake_hardware
                         'prefix': f"{robot2_namespace}/", # Pass the prefix argument with a trailing slash
                         'namespace': f"/{robot2_namespace}", # Namespace for the robot
                         # Initial pose for Robot 1

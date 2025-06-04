@@ -319,8 +319,7 @@ def launch_setup(context, *args, **kwargs):
         package="controller_manager",
         executable="spawner",
         arguments=[fault_controller, "-c", "controller_manager"],
-        condition=IfCondition(use_internal_bus_gripper_comm),
-
+        condition=IfCondition(PythonExpression(["'", use_internal_bus_gripper_comm, "' == 'true'"])), 
     )
 
     nodes_to_start = [
@@ -332,9 +331,9 @@ def launch_setup(context, *args, **kwargs):
 
     ]
     
-    if use_fake_hardware.perform(context) == "false":
-        nodes_to_start.append(joint_state_broadcaster_spawner)
-        nodes_to_start.append(robot_traj_controller_spawner)
+    # if use_fake_hardware.perform(context) == "false":
+    nodes_to_start.append(joint_state_broadcaster_spawner)
+    nodes_to_start.append(robot_traj_controller_spawner)
     nodes_to_start.append(robot_hand_controller_spawner) # It has its own IfCondition
     nodes_to_start.append(fault_controller_spawner)      # It has its own IfCondition
     
