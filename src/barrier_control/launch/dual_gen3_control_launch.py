@@ -320,8 +320,8 @@ def generate_launch_description():
                         'tool_frame': f"{robot2_namespace}/end_effector_link",
                         # --- Controller Gains & Settings ---
                         # Kp gains [x, y, z, rx, ry, rz] - Tune these values!
-                        'kp_gains': [0.2] * 6, # Reduced for slower movement
-                        'kd_gains': [0.01]*3 + [0.01] * 3,
+                        'kp_gains': [0.4] * 6, # Reduced for slower movement
+                        'kd_gains': [0.015]*3 + [0.015] * 3,
                         'jacobian_damping': 0.05, # Damping for pseudo-inverse singularity robustness (increased slightly)
                         'euler_input_convention': 'quat', # Convention for interpreting target orientation if given as Euler: 'xyz', 'zyx', etc.
                         # --- Joint Specific Settings ---

@@ -24,6 +24,9 @@ setup(
             'config/cart_controller_velocity.yaml',
             'config/rrbot_controllers.yaml',
             ]),
+        ('share/' + package_name + '/scripts', [
+            'scripts/fault_clearer_node.py'
+            ]), 
 
 
     ],
@@ -43,7 +46,7 @@ setup(
             'target_handler = barrier_control.target_handler:main',
             'kortex_dual_arm_node = barrier_control.kortex_dual_arm_node:main',
             'gripper_tcp_node = barrier_control.gripper_tcp_node:main',
-            'fault_clearer_node = barrier_control.scripts.fault_clearer_node:main', 
+            'fault_clearer = barrier_control.scripts.fault_clearer_node:main',
         ],
     },
 )
