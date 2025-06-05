@@ -24,11 +24,13 @@ class IKTestNode(Node):
         self.load_robot_model() # Call directly
 
         if self.robot:
-            self.run_ik_tests()
+            self.get_logger().info(f"\nRobot Structure:\n{self.robot.structure}") # Print robot structure
+            self.test_dynamics() # NEW: Test dynamics first
+            self.run_ik_tests()  # Then test IK
         else:
-            self.get_logger().error("Robot model not loaded. Cannot run IK tests.")
+            self.get_logger().error("Robot model not loaded. Cannot run tests.")
         
-        self.get_logger().info("IK tests finished. Shutting down node.")
+        self.get_logger().info("Tests finished. Shutting down node.")
         rclpy.try_shutdown()
 
 
@@ -77,6 +79,27 @@ class IKTestNode(Node):
             self.robot = None
         finally:
             if tmp_file_path and os.path.exists(tmp_file_path): os.remove(tmp_file_path)
+
+    def test_dynamics(self):
+        self.get_logger().info("--- Starting Dynamics (Inertia Matrix) Test ---")
+        if not self.robot:
+            self.get_logger().error("No robot model loaded for dynamics test.")
+            return
+
+        q_test = np.zeros(self.num_model_joints, dtype=np.float64)
+        if hasattr(self.robot, 'qz') and isinstance(self.robot.qz, np.ndarray) and self.robot.qz.shape == (self.num_model_joints,):
+            q_test = np.array(self.robot.qz, dtype=np.float64)
+        
+        self.get_logger().info(f"Testing inertia matrix with q: {q_test}")
+        try:
+            inertia_m = self.robot.inertia([0, 0, 0, 0, 0, 0])
+            self.get_logger().info(f"Inertia matrix calculated successfully. Shape: {inertia_m.shape}\n{inertia_m}")
+        except TypeError as te:
+            self.get_logger().error(f"TypeError during inertia calculation: {te}")
+        except Exception as e:
+            self.get_logger().error(f"Other exception during inertia calculation: {e}")
+        self.get_logger().info("--- End Dynamics Test ---")
+
 
     def run_ik_tests(self):
         self.get_logger().info("--- Starting IK Solver Tests ---")

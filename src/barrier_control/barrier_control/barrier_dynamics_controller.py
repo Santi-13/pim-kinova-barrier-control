@@ -48,15 +48,13 @@ class BarrierDynamicsController(Node):
 
         # Initialize dynamic parameters
         self.declare_parameter('P', [1.0]*12) # Diagonal matrix P for norm calculation
-        self.declare_parameter('x_plus', 100.0) # Barrier term
         self.declare_parameter('lambda_1_0', 1.0) # Initial value for lambda_1
         self.declare_parameter('lambda_2_0', 1.0)
         self.declare_parameter('r', 1.0) # Exponent for adaptive terms
         self.declare_parameter('K_P_initial_diag', [1.0]*6) # Initial diagonal values for K_P
         self.declare_parameter('K_D_initial_diag', [1.0]*6)  # Initial diagonal values for K_D
 
-        self.P = np.diag(self.get_parameter('P').get_parameter_value().double_array_value)
-        self.x_plus = self.get_parameter('x_plus').get_parameter_value().double_array_value
+        self.P = np.diag(self.get_parameter('P').get_parameter_value().double_array_value)        
         self.lambda_1_0 = self.get_parameter('lambda_1_0').value
         self.lambda_2_0 = self.get_parameter('lambda_2_0').value
         self.r = self.get_parameter('r').value
@@ -67,8 +65,6 @@ class BarrierDynamicsController(Node):
         # Calculation parameters
         self.lambda_1 = 0.0
         self.lambda_2 = 0.0
-        self.lambda_1_dot = 0.0
-        self.lambda_2_dot = 0.0
 
 
         # Default limits, will be overwritten by URDF if available
@@ -81,6 +77,11 @@ class BarrierDynamicsController(Node):
         max_velocity_limits_default = [0.1]*6
         self.joint_velocity_limits = np.array([min_velocity_limits_default, max_velocity_limits_default])
 
+        
+        # Update joint limits boundary condition
+        self.default_x_plus_boundary = self.norm_squared_P(np.concatenate((self.joint_position_limits[0], self.joint_velocity_limits[0])), self.P)
+        self.current_dynamic_x_plus = self.default_x_plus_boundary # Initialize with the default/max
+        self.get_logger().info(f"Default x_plus boundary condition set to: {self.default_x_plus_boundary:.4f}")
 
         # Subscribers 
         self.joint_state_subscription = self.create_subscription(
@@ -212,6 +213,19 @@ class BarrierDynamicsController(Node):
                 default_qlim_max = np.array([np.pi] * self.num_model_joints, dtype=np.float64)
                 default_full_qlim = np.vstack([default_qlim_min, default_qlim_max])
 
+                try:
+                    q_test_inertia = np.zeros(self.num_model_joints, dtype=np.float64)
+                    # Or if self.robot.qz is reliably set:
+                    # q_test_inertia = np.array(self.robot.qz, dtype=np.float64)
+                    self.get_logger().info(f"Testing self.robot.inertia() with q_test: {q_test_inertia}")
+                    inertia_matrix_test = self.robot.inertia(q_test_inertia)
+                    self.get_logger().info(f"Isolated inertia test PASSED. Matrix shape: {inertia_matrix_test.shape}")
+                except TypeError as te:
+                    self.get_logger().error(f"Isolated inertia test FAILED with TypeError: {te}")
+                except Exception as e:
+                    self.get_logger().error(f"Isolated inertia test FAILED with other exception: {e}")
+
+
                 if self.robot.qlim is not None and self.robot.qlim.shape == (2, self.num_model_joints):
                     self.get_logger().info(f"Original robot qlim from URDF:\n{self.robot.qlim}\ndtype: {self.robot.qlim.dtype}")
                     cleaned_qlim = np.array(self.robot.qlim, dtype=np.float64)
@@ -262,19 +276,28 @@ class BarrierDynamicsController(Node):
 
     def calculate_adaptive_terms(self):
 
+        if not hasattr(self, 'x') or self.x is None:
+            self.get_logger().warn("State self.x not available for adaptive term calculation.", throttle_duration_sec=5)
+            self.lambda_1 = 0.0 # Default to no adaptation if state is missing
+            self.lambda_2 = 0.0
+            return
+
         norm_x = self.norm_squared_P(self.x, self.P)
-        if self.x_plus <= 0.0 or norm_x >= self.x_plus: # Check if already at or past barrier
-            self.get_logger().warn(f"Arm {self.arm_index} - Barrier condition issue: current_dynamic_x_plus={self.x_plus:.4g}, norm_x_sq_P={norm_x:.4g}. Clamping lambdas.")
+
+        # Use self.current_dynamic_x_plus which is updated by update_current_dynamic_x_plus()
+        active_x_plus_boundary = self.current_dynamic_x_plus 
+
+        if active_x_plus_boundary <= 0.0 or norm_x >= active_x_plus_boundary:
+            # self.get_logger().warn(f"Arm {self.arm_index} - Barrier issue for lambda calc: x_plus={active_x_plus_boundary:.4g}, norm_x^2_P={norm_x:.4g}. Clamping lambdas.")
             self.lambda_1 = 0.0
             self.lambda_2 = 0.0
         else:
-            lambda_factor = (self.x_plus - norm_x) / self.x_plus
+            lambda_factor = (active_x_plus_boundary - norm_x) / active_x_plus_boundary
+            # Ensure lambda_factor is not negative due to numerical precision if norm_x is extremely close to active_x_plus_boundary
+            lambda_factor = max(0.0, lambda_factor) 
             self.lambda_1 = self.lambda_1_0 * (lambda_factor)**self.r
             self.lambda_2 = self.lambda_2_0 * (lambda_factor)**self.r
-
-
-        # self.lambda_1_dot = self.lambda_1_dot + self.lambda_1 * ( 1.0 / self.controller_frequency )
-        # self.lambda_2_dot = self.lambda_2_dot + self.lambda_2 * ( 1.0 / self.controller_frequency )
+        # self.get_logger().info(f"DEBUG: norm_x={norm_x}, active_x_plus={active_x_plus_boundary}, factor={lambda_factor}, lambda1={self.lambda_1}")
 
 
     def calculate_x_plus_for_spherical_obstacle(self, obstacle_center_base: np.ndarray, obstacle_radius: float) -> float | None:
@@ -283,61 +306,51 @@ class BarrierDynamicsController(Node):
         Assumes obstacle_center_base is in the robot's base frame.
         """
         if self.robot is None or self.current_joint_positions is None:
-            self.get_logger().warn("Robot model or q_current not ready for sphere barrier x_plus calc.")
+            self.get_logger().warn("Robot model or q_current not ready for sphere barrier x_plus calc.", throttle_duration_sec=5)
             return None
 
         current_ee_pose_base: SE3 = self.get_current_ee_pose_in_base()
         if current_ee_pose_base is None:
-            return None
+            return None # Error already logged by get_current_ee_pose_in_base
         
-        ee_pos_base = current_ee_pose_base.t # Current EE position in base frame [x,y,z]
+        ee_pos_base = current_ee_pose_base.t
 
         vec_obs_to_ee = ee_pos_base - obstacle_center_base
         dist_obs_to_ee = np.linalg.norm(vec_obs_to_ee)
 
+        # If EE is already inside or at the center, return a very small x_plus to activate barrier strongly
         if dist_obs_to_ee < obstacle_radius:
-            self.get_logger().warn(f"Arm {self.arm_index} - EE is already inside the spherical obstacle (dist: {dist_obs_to_ee:.3f} < radius: {obstacle_radius:.3f}). Setting a very restrictive x_plus.")
-            # Return a very small positive x_plus to make the barrier extremely repulsive.
-            # This indicates the constraint is already violated or very close to violation from inside.
+            self.get_logger().warn(f"Arm {self.arm_index} - EE is INSIDE spherical obstacle (dist: {dist_obs_to_ee:.3f} < R: {obstacle_radius:.3f}). Returning highly restrictive x_plus.")
             return 1e-9 
-        
-        if dist_obs_to_ee < 1e-6: # EE is (almost) at the center of the obstacle
-            self.get_logger().warn(f"Arm {self.arm_index} - EE is at the center of the spherical obstacle. Cannot define closest point normally.")
-             # This is also a critical situation. A very small x_plus is appropriate.
+        if dist_obs_to_ee < 1e-6 : # Effectively at the center
+            self.get_logger().warn(f"Arm {self.arm_index} - EE at center of spherical obstacle. Returning highly restrictive x_plus.")
             return 1e-9
 
-        # Closest point on sphere surface to current EE, this is the point EE should not reach/cross
         closest_point_on_sphere_surface_to_ee = obstacle_center_base + obstacle_radius * (vec_obs_to_ee / dist_obs_to_ee)
+        target_barrier_pose_rtb = SE3(closest_point_on_sphere_surface_to_ee) * SE3(current_ee_pose_base.R) # Maintain current orientation
 
-        # Target pose for IK: EE at this closest_point_on_sphere_surface_to_ee, maintaining current EE orientation
-        # You might want a different strategy for target orientation at the barrier.
-        target_barrier_pose_rtb = SE3(closest_point_on_sphere_surface_to_ee) * SE3(current_ee_pose_base.R)
+        q_ik_guess_for_barrier = np.copy(self.current_joint_positions) 
+        
+        try:
+            sol = self.robot.ikine_LM(Tep=target_barrier_pose_rtb, q0=q_ik_guess_for_barrier, joint_limits=True, slimit=100, ilimit=50)
+        except Exception as e:
+            self.get_logger().error(f"Arm {self.arm_index} - Exception during IK for spherical barrier point: {e}")
+            return None
 
-        # Solve IK to find q_barrier for this pose
-        # Use current joints as initial guess for speed and local solution
-        sol = self.robot.ikine_LM(Tep=target_barrier_pose_rtb, q0=self.current_joint_positions, joint_limits=False)
 
         if not sol.success:
-            self.get_logger().warn(f"Arm {self.arm_index} - IK solution for spherical barrier point not found. Reason: {sol.reason}. Sphere x_plus not calculated.")
-            # If IK fails, we can't determine q_barrier.
-            # Option: return None (this barrier won't be considered)
-            # Option: return a very large value (this barrier is ignored)
-            # Option: if dist_obs_to_ee is small, return a small x_plus to be safe, even without IK.
-            # For now, returning None means this specific calculation failed.
+            self.get_logger().warn(f"Arm {self.arm_index} - IK for spherical barrier point NOT found. Reason: {sol.reason}. Sphere x_plus not calculated.")
             return None 
         
         q_at_barrier = sol.q
-        q_dot_at_barrier = np.zeros_like(q_at_barrier) # Assume zero velocity at the barrier
+        q_dot_at_barrier = np.zeros_like(q_at_barrier) 
         x_at_barrier = np.concatenate((q_at_barrier, q_dot_at_barrier))
         
-        # Ensure P matrix is compatible
         if not (isinstance(self.P, np.ndarray) and self.P.shape == (len(x_at_barrier), len(x_at_barrier))):
-            self.get_logger().error(f"P matrix shape {self.P.shape if isinstance(self.P, np.ndarray) else 'Invalid'} not compatible with state vector length {len(x_at_barrier)}.")
+            self.get_logger().error(f"P matrix shape {self.P.shape if isinstance(self.P, np.ndarray) else 'Invalid'} not compatible with state vector length {len(x_at_barrier)} for sphere x_plus.")
             return None
             
         x_plus_for_this_sphere = self.norm_squared_P(x_at_barrier, self.P)
-        
-        # self.get_logger().info(f"Arm {self.arm_index} - Calculated x_plus for sphere (center: {obstacle_center_base}, R:{obstacle_radius}): {x_plus_for_this_sphere:.3f}")
         return x_plus_for_this_sphere
         
 
@@ -347,18 +360,15 @@ class BarrierDynamicsController(Node):
         and updates self.current_dynamic_x_plus to the most restrictive (smallest) one.
         This should be called in your control_step_callback before calculate_adaptive_terms.
         """
-        # Start with the default maximum boundary from parameters
-        candidate_x_plus_values = [self.x_plus]
+        candidate_x_plus_values = [self.default_x_plus_boundary] # Start with the most permissive boundary
 
-        # --- Example: Spherical Obstacle 1 ---
-        # Obstacle parameters would typically come from perception or a world model.
-        # For now, let's hardcode one for demonstration. Assume coordinates are in base_link.
-        obs1_center = np.array([0.6, 0.15, 0.2]) 
-        obs1_radius = 0.08
+        # --- Example: Spherical Obstacle (coordinates in base frame) ---
+        obs1_center = np.array([0.5, 0.0, 0.3]) # Example obstacle
+        obs1_radius = 0.15
         x_plus_obs1 = self.calculate_x_plus_for_spherical_obstacle(obs1_center, obs1_radius)
-        if x_plus_obs1 is not None:
+        if x_plus_obs1 is not None and x_plus_obs1 > 0: # Ensure positive
             candidate_x_plus_values.append(x_plus_obs1)
-
+        
         # --- Example: Spherical Obstacle 2 ---
         # obs2_center = np.array([0.5, -0.2, 0.3])
         # obs2_radius = 0.05
@@ -374,12 +384,17 @@ class BarrierDynamicsController(Node):
         # Note that your BLF formulation implies x_plus is a function of the OTHER robot's state,
         # so for robot i, x_plus_i = f(x_j). This x_plus_i is what robot i uses.
 
-        if not candidate_x_plus_values: # Should not happen if default is always there
-             self.x_plus = self.x_plus # Fallback
+
+        positive_candidates = [c for c in candidate_x_plus_values if c > 0] # Ensure we only consider positive x_plus
+        if not positive_candidates:
+            self.get_logger().warn(f"Arm {self.arm_index} - No positive candidate x_plus values. Using small default fallback.")
+            self.current_dynamic_x_plus = 1e-6 
         else:
-            self.x_plus = min(candidate_x_plus_values) # Most restrictive
-        
-        # self.get_logger().info(f"Arm {self.arm_index} - Updated current_dynamic_x_plus: {self.current_dynamic_x_plus:.4f}")
+            new_dynamic_x_plus = min(positive_candidates)
+            # Only log if it changes significantly to reduce noise
+            if not np.isclose(new_dynamic_x_plus, self.current_dynamic_x_plus):
+                 self.get_logger().info(f"Arm {self.arm_index} - Updated current_dynamic_x_plus from {self.current_dynamic_x_plus:.4f} to {new_dynamic_x_plus:.4f}")
+            self.current_dynamic_x_plus = new_dynamic_x_plus
 
     
     ### CALLBACKS ###
@@ -557,9 +572,9 @@ class BarrierDynamicsController(Node):
             return
 
         
-        if self.x is None or self.x_plus <= 0.0:
-            self.get_logger().warn("Barrier term x_plus is non-positive, skipping control step.")
-            return
+        # Update dynamic x_plus based on environment (e.g., obstacles)
+        # self.update_current_dynamic_x_plus() # This will set self.current_dynamic_x_plus
+
         
         # 3. Calculate error
         # q_d is from IK, q_d_dot is likely zero
@@ -567,10 +582,10 @@ class BarrierDynamicsController(Node):
         error_q_dot = self.target_joint_velocities - self.current_joint_velocities # or self.x[self.num_model_joints:]
         
         # 4. Call self.calculate_adaptive_terms() (which calculates lambda_1, lambda_2 based on current self.x and self.x_plus_scalar)
-        self.calculate_adaptive_terms()
+        # self.calculate_adaptive_terms()
 
         # 5. Rigid-Body Dynamics Control Law
-        joint_velocities_raw = np.diagonal(self.K_P) * error_q + np.diagonal(self.K_D) * error_q_dot
+        joint_velocities_raw = self.K_P @ error_q + self.K_D @ error_q_dot
 
         joint_velocities_limited = np.clip(joint_velocities_raw.flatten(),
                                                self.joint_velocity_limits[0, :],
@@ -590,42 +605,22 @@ class BarrierDynamicsController(Node):
                     v_after_pos_limits[i] = 0.0
             joint_velocities_limited = v_after_pos_limits
 
-        # --- THEORETICAL DERIVATION NEEDED HERE ---
-        # Implement the derived update laws for K_P and K_D
-        # dot_K_P = ... # Your formula: f(self.x, error_q, error_q_dot, self.lambda_1, self.P, ...)
-        # dot_K_D = ... # Your formula: f(self.x, error_q, error_q_dot, self.lambda_2, self.P, ...)
+
+
+        # --- Integrate to find next target position ---
         dt = 1.0 / self.controller_frequency
-        # self.K_P += dot_K_P * dt 
-        # self.K_D += dot_K_D * dt
+        q_next_target = self.current_joint_positions + joint_velocities_limited * dt
 
-        # Implement the derived control law tau_BLF
-        B_el_q = self.robot.inertia(self.q)
-        # C_el_q_qdot = self.robot.coriolis(self.q, self.q_dot) # If using RTB methods that take q and qd
-        # G_el_q = self.robot.gravity_rnea(self.q) # Or other gravity methods
-        tau_BLF = B_el_q @ (self.K_P + self.K_D)
-        
-        # 5. Calculate q_ddot, q_dot, q
-        # q_ddot = np.linalg.inv(B_el_q) @ (tau_BLF ) #- C_el_q_qdot)
-        # q_dot = self.current_joint_velocities + q_ddot * (1.0 / self.controller_frequency)
-        # self.q = self.current_joint_positions + q_dot * (1.0 / self.controller_frequency)
-        self.q = self.current_joint_positions + joint_velocities_limited * dt
+        # Clip to joint limits again for safety before publishing (already somewhat handled by vel clamping)
+        if self.joint_position_limits is not None:
+            q_next_target = np.clip(q_next_target, 
+                                    self.joint_position_limits[0, :] + self.joint_limit_buffer_fval / 2.0, # Smaller buffer for final clip
+                                    self.joint_position_limits[1, :] - self.joint_limit_buffer_fval / 2.0)
 
-        # Apply joint position limits with buffer before sending
-        if self.joint_position_limits is not None and \
-        self.joint_position_limits.shape[0] == 2 and \
-        self.target_joint_positions.shape[0] == self.joint_position_limits.shape[1]:
-            min_limits_b = self.joint_position_limits[0, :] + self.joint_limit_buffer_fval
-            max_limits_b = self.joint_position_limits[1, :] - self.joint_limit_buffer_fval
-            target_joint_positions = np.clip(target_joint_positions, min_limits_b, max_limits_b)
+        # self.get_logger().info(f"Arm {self.arm_index} - Ctrl Step: q_next={q_next_target}, err_q_norm={np.linalg.norm(error_q):.3f}, L1={self.lambda_1:.2f}")
+        time_to_reach_next_point = max(dt * 1.5, 0.02) 
+        self.publish_target_joint_positions(q_next_target, time_to_reach_next_point)
 
-        # --- (END OF THEORETICAL DERIVATION IMPLEMENTATION) ---
-
-        # For now, let's log what we have:
-        self.get_logger().info(f"Arm {self.arm_index} - Control Step: q={self.q}, err_q={error_q}, K_P_diag={np.diag(self.K_P)}, lambda1={self.lambda_1}")
-        time_to_reach_next_point = 2.0 / self.controller_frequency # Give JTC 2 control cycles
-        self.publish_target_joint_positions(self.q, time_to_reach_next_point)
-
-        return
 
         
 
