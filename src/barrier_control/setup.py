@@ -47,6 +47,8 @@ setup(
             'kortex_dual_arm_node = barrier_control.kortex_dual_arm_node:main',
             'gripper_tcp_node = barrier_control.gripper_tcp_node:main',
             'fault_clearer = barrier_control.scripts.fault_clearer_node:main',
+            'barrier_dynamics_controller = barrier_control.barrier_dynamics_controller:main',
+            'ik_test_node = barrier_control.ik_test_node:main',
         ],
     },
 )
