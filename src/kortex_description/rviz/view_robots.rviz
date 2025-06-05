@@ -11,6 +11,7 @@ Panels:
         - /RobotModel2/Description Topic1
         - /TF1
         - /TF1/Frames1
+        - /MarkerArray1
       Splitter Ratio: 0.5
     Tree Height: 778
   - Class: rviz_common/Selection
@@ -265,6 +266,30 @@ Visualization Manager:
                             {}
       Update Interval: 0
       Value: true
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Name: MarkerArray
+      Namespaces:
+        {}
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /robot1/arm_0/barrier_visuals
+      Value: true
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Name: MarkerArray
+      Namespaces:
+        {}
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /robot2/arm_1/barrier_visuals
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
@@ -311,25 +336,25 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 2.093163013458252
+      Distance: 3.1533870697021484
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: 0.07368814945220947
-        Y: -0.07253113389015198
-        Z: 0.20048126578330994
+        X: 0.15914508700370789
+        Y: 0.22867326438426971
+        Z: 0.2543218433856964
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.5253980159759521
+      Pitch: 0.5803979635238647
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 5.948552131652832
+      Yaw: 5.723548412322998
     Saved: ~
 Window Geometry:
   Displays:

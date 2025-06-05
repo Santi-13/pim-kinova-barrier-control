@@ -306,6 +306,9 @@ def generate_launch_description():
                         "'", LaunchConfiguration('use_rigid_body_dynamics_controller'), "' == 'false'"
                     ])),
                     parameters=[{
+                        # --- Frame Names ---
+                        'robot_base_frame': f"{robot1_namespace}/base_link",
+                        'robot_tool_frame': f"{robot1_namespace}/end_effector_link",
                         # --- Controller Gains & Settings ---
                         # Kp gains [x, y, z, rx, ry, rz] - Tune these values!
                         'K_P_initial_diag': [0.4]*6, # Reduced for slower movement
@@ -455,6 +458,9 @@ def generate_launch_description():
                         "'", LaunchConfiguration('use_rigid_body_dynamics_controller'), "' == 'false'"
                     ])),
                     parameters=[{
+                        # --- Frame Names ---
+                        'robot_base_frame': f"{robot2_namespace}/base_link",
+                        'robot_tool_frame': f"{robot2_namespace}/end_effector_link",
                         # --- Controller Gains & Settings ---
                         # Kp gains [x, y, z, rx, ry, rz] - Tune these values!
                         'K_P_initial_diag': [0.4]*6, # Reduced for slower movement
