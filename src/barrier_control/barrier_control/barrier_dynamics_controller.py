@@ -74,6 +74,7 @@ class BarrierDynamicsController(Node):
         # Calculation parameters
         self.lambda_1 = 0.0
         self.lambda_2 = 0.0
+        self.epsilon = 2.0
 
         
         # --- TF2 Listener Setup ---
@@ -362,6 +363,7 @@ class BarrierDynamicsController(Node):
             return
 
         norm_x = self.norm_squared_P(self.x, self.P)
+        self.get_logger().warn(f"The current norm_x (for x_plus comparison) is {norm_x:.4f}")
 
         # Use self.current_dynamic_x_plus which is updated by update_current_dynamic_x_plus()
         active_x_plus_boundary = self.current_dynamic_x_plus 
@@ -406,13 +408,31 @@ class BarrierDynamicsController(Node):
             return 1e-9
 
         closest_point_on_sphere_surface_to_ee = obstacle_center_base + obstacle_radius * (vec_obs_to_ee / dist_obs_to_ee)
-        target_barrier_pose_rtb = SE3(closest_point_on_sphere_surface_to_ee) * SE3(current_ee_pose_base.R) # Maintain current orientation
 
-        self.get_logger().warn(f"The end effector is at: {ee_pos_base}")
-        self.get_logger().warn(f"Center of the barrier is at: {dist_obs_to_ee:.3f}")
+        # self.get_logger().info(f"Arm {self.arm_index} - Closest point on sphere surface to EE (P_surf): {closest_point_on_sphere_surface_to_ee.tolist()}")
+
+        current_ee_R_matrix = current_ee_pose_base.R
+
+        target_barrier_pose_rtb = None
+
+        try:
+            # Use SE3.Rt(Rotation, translation) for direct and unambiguous construction
+            target_barrier_pose_rtb = SE3.Rt(current_ee_R_matrix, closest_point_on_sphere_surface_to_ee)
+        except Exception as e_se3:
+            self.get_logger().error(f"Arm {self.arm_index} - Error constructing target_barrier_pose_rtb with SE3.Rt: {e_se3}")
+            self.get_logger().error(f"    Input R shape: {current_ee_R_matrix.shape if isinstance(current_ee_R_matrix, np.ndarray) else type(current_ee_R_matrix)}, dtype: {current_ee_R_matrix.dtype if isinstance(current_ee_R_matrix, np.ndarray) else 'N/A'}")
+            self.get_logger().error(f"    Input t shape: {closest_point_on_sphere_surface_to_ee.shape if isinstance(closest_point_on_sphere_surface_to_ee, np.ndarray) else type(closest_point_on_sphere_surface_to_ee)}, dtype: {closest_point_on_sphere_surface_to_ee.dtype if isinstance(closest_point_on_sphere_surface_to_ee, np.ndarray) else 'N/A'}")
+            return None
+
+        # --- Explicitly log the components of the single target_barrier_pose_rtb ---
+        # self.get_logger().info(f"Arm {self.arm_index} - Target Barrier IK - Calculated Position (Tep.t): {target_barrier_pose_rtb.t.tolist()}")
+        # self.get_logger().info(f"Arm {self.arm_index} - Target Barrier IK - Calculated Rotation (Tep.R):\n{target_barrier_pose_rtb.R}")
+        # The following log is good for one last sanity check if Tep.R still looks wrong
+        # self.get_logger().info(f"Arm {self.arm_index} - Current EE Rotation used for Tep.R (for reference):\n{current_ee_R_matrix}")
+
         
         q_ik_guess_for_barrier = np.copy(self.current_joint_positions) 
-        self.get_logger().info(f"Arm {self.arm_index} - Attempting IK for barrier point. Target SE3 (rel to base):\n{target_barrier_pose_rtb}", throttle_duration_sec=2.0)
+
         try:
             sol = self.robot.ikine_NR(Tep=target_barrier_pose_rtb, q0=q_ik_guess_for_barrier, joint_limits=True, slimit=100, ilimit=50)
         except Exception as e:
@@ -431,9 +451,10 @@ class BarrierDynamicsController(Node):
         if not (isinstance(self.P, np.ndarray) and self.P.shape == (len(x_at_barrier), len(x_at_barrier))):
             self.get_logger().error(f"P matrix shape {self.P.shape if isinstance(self.P, np.ndarray) else 'Invalid'} not compatible with state vector length {len(x_at_barrier)} for sphere x_plus.")
             return None
-            
+        
+        self.get_logger().info(f"x state at barrier point: {x_at_barrier.tolist()}")
         x_plus_for_this_sphere = self.norm_squared_P(x_at_barrier, self.P)
-        return x_plus_for_this_sphere
+        return x_plus_for_this_sphere + self.epsilon
         
 
     def update_current_dynamic_x_plus(self):
@@ -510,6 +531,7 @@ class BarrierDynamicsController(Node):
 
 
         positive_candidates = [c for c in candidate_x_plus_values if c > 0] # Ensure we only consider positive x_plus
+        self.get_logger().info(f"Arm {self.arm_index} - Candidate x_plus values: {positive_candidates}")
         if not positive_candidates:
             self.get_logger().warn(f"Arm {self.arm_index} - No positive candidate x_plus values. Using small default fallback.")
             self.current_dynamic_x_plus = 1e-6 
@@ -774,25 +796,25 @@ class BarrierDynamicsController(Node):
                     return # Done for this control cycle; holding logic will take over next cycle.
 
             # --- 4b. If target not reached, proceed with PD Control ---
-            # self.update_current_dynamic_x_plus() # This will set self.current_dynamic_x_plus #
+            self.update_current_dynamic_x_plus() # This will set self.current_dynamic_x_plus #
             
             error_q = self.target_joint_positions - self.current_joint_positions  #
             error_q_dot = self.target_joint_velocities - self.current_joint_velocities #
 
-            # self.calculate_adaptive_terms() #
+            self.calculate_adaptive_terms() #
             #Log lambda values
-            # self.get_logger().warn(f"Arm {self.arm_index} - lambda_1 = {self.lambda_1:.2f}, lambda_2 = {self.lambda_2:.2f}")
+            self.get_logger().warn(f"Arm {self.arm_index} - lambda_1 = {self.lambda_1:.2f}, lambda_2 = {self.lambda_2:.2f}")
             
 
-            joint_velocities_raw = self.K_P @ error_q + self.K_D @ error_q_dot #
+            pd_output_velocities = self.K_P @ error_q + self.K_D @ error_q_dot #
 
             # --- Apply Barrier Logic using lambda_1 ---
             # Scale the PD output by lambda_1. As the robot approaches a boundary
             # (norm_x -> current_dynamic_x_plus), lambda_1 -> 0, scaling down the command.
-            # joint_velocities_raw = self.lambda_1 * pd_output_velocities
+            joint_velocities_raw = self.lambda_1 * pd_output_velocities
             
-            # if not np.isclose(self.lambda_1, 1.0):
-            #     self.get_logger().info(f"Arm {self.arm_index} - Lambda_1: {self.lambda_1:.3f} applied. Original PD: {[f'{v:.3f}' for v in pd_output_velocities]}, Scaled: {[f'{v:.3f}' for v in joint_velocities_raw]}", throttle_duration_sec=1.0)
+            if not np.isclose(self.lambda_1, 1.0):
+                self.get_logger().info(f"Arm {self.arm_index} - Lambda_1: {self.lambda_1:.3f} applied. Original PD: {[f'{v:.3f}' for v in pd_output_velocities]}, Scaled: {[f'{v:.3f}' for v in joint_velocities_raw]}", throttle_duration_sec=1.0)
 
 
             joint_velocities_limited = np.clip(joint_velocities_raw.flatten(), #
