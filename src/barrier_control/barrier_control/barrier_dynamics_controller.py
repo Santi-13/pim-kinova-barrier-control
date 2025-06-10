@@ -62,6 +62,8 @@ class BarrierDynamicsController(Node):
         self.declare_parameter('r', 1.0) # Exponent for adaptive terms
         self.declare_parameter('K_P_initial_diag', [1.0]*6) # Initial diagonal values for K_P
         self.declare_parameter('K_D_initial_diag', [1.0]*6)  # Initial diagonal values for K_D
+        self.declare_parameter('barrier_gain', 1.0)  # Gain for the q_dot_avoid term
+        self.declare_parameter('h_denominator_offset', 0.01) # Small constant for h(x) denominator
 
         self.P = np.diag(self.get_parameter('P').get_parameter_value().double_array_value)        
         self.lambda_1_0 = self.get_parameter('lambda_1_0').value
@@ -69,12 +71,14 @@ class BarrierDynamicsController(Node):
         self.r = self.get_parameter('r').value
         self.K_P = np.diag(self.get_parameter('K_P_initial_diag').value)
         self.K_D = np.diag(self.get_parameter('K_D_initial_diag').value)
-
+        self.barrier_gain_param = self.get_parameter('barrier_gain').get_parameter_value().double_value
+        self.h_denominator_offset_param = self.get_parameter('h_denominator_offset').get_parameter_value().double_value
+        
 
         # Calculation parameters
         self.lambda_1 = 0.0
         self.lambda_2 = 0.0
-        self.epsilon = 2.0
+        self.epsilon = 1.5
 
         
         # --- TF2 Listener Setup ---
@@ -83,9 +87,9 @@ class BarrierDynamicsController(Node):
 
 
         # Default limits, will be overwritten by URDF if available
-        min_position_limits_default = [-1.0 * math.pi,    -2.2,   -2.5,   -1.0 * math.pi,   -2.08, -1.0 * math.pi]
+        min_position_limits_default = [-1.0 * math.pi,    -2.2,   -2.58,   -1.0 * math.pi,   -2.099, -1.0 * math.pi]
         # min_position_limits_default = [0.0] * 6
-        max_position_limits_default = [ 1.0 * math.pi,     2.2,    2.5,    1.0 * math.pi,    2.08,  1.0 * math.pi]
+        max_position_limits_default = [ 1.0 * math.pi,     2.2,    2.58,    1.0 * math.pi,    2.099,  1.0 * math.pi]
         self.joint_position_limits = np.array((min_position_limits_default, max_position_limits_default))
 
         min_velocity_limits_default = [-0.1]*6
@@ -173,30 +177,7 @@ class BarrierDynamicsController(Node):
             raise ValueError("P debe ser simétrica.")
         
         return float(x.T @ P @ x)
-        
-    def calculate_jacobian(self):
-        try:
-            if self.robot is None or self.current_joint_positions is None:
-                # self.get_logger().warn("Jacobian: Robot model or joint positions not ready.", throttle_duration_sec=2)
-                return None
-            if len(self.current_joint_positions) != self.num_model_joints:
-                # self.get_logger().warn(f"Jacobian: current_joint_positions length ({len(self.current_joint_positions)}) "
-                                    #  f"mismatches num_model_joints ({self.num_model_joints}).", throttle_duration_sec=2)
-                return None
-
-            q_np = np.array(self.current_joint_positions)
-            J_base = self.robot.jacob0(q_np) # Geometric Jacobian in base frame
-
-            if J_base.shape[0] == 6 and J_base.shape[1] == self.num_model_joints:
-                # self.get_logger().debug("Jacobian calculated successfully.")
-                return J_base
-            else:
-                self.get_logger().error(f"Jacobian shape mismatch: {J_base.shape}, expected (6, {self.num_model_joints}) for q={q_np}")
-                return None
-        except Exception as e:
-            self.get_logger().error(f"Error calculating Jacobian: {e}")
-            return None
-        
+          
     def publish_target_joint_positions(self, target_positions: np.ndarray | None, time_from_start: float = 0.1):
         if target_positions is None:
             return
@@ -275,6 +256,50 @@ class BarrierDynamicsController(Node):
 
         return pos_error_norm, orientation_error_angle
     
+    def calculate_joint_space_barrier_gradient(self) -> np.ndarray:
+        """
+        Calculates the gradient of the barrier function h(q) w.r.t. joint angles q
+        using numerical finite differences. This gradient vector represents the direction
+        of "steepest ascent" away from the barrier in joint space.
+        """
+        if self.current_joint_positions is None or self.current_joint_velocities is None:
+            return np.zeros(self.num_model_joints)
+
+        # The state vector x is [q, q_dot]
+        x_current = np.concatenate((self.current_joint_positions, self.current_joint_velocities))
+        
+        # Calculate h(q) at the current position
+        norm_x_current_sq = self.norm_squared_P(x_current, self.P)
+        h_current = self.current_dynamic_x_plus - norm_x_current_sq
+
+        # The gradient vector to be populated
+        grad_h = np.zeros(self.num_model_joints)
+        
+        # A small perturbation for finite differences
+        delta = 0.001  # radians
+
+        for i in range(self.num_model_joints):
+            # Create a perturbed joint position vector
+            q_perturbed = np.copy(self.current_joint_positions)
+            q_perturbed[i] += delta
+
+            # Create the corresponding perturbed state vector x
+            x_perturbed = np.concatenate((q_perturbed, self.current_joint_velocities)) # Assume velocities are constant for this small change
+
+            # Calculate h(q) at the perturbed position
+            norm_x_perturbed_sq = self.norm_squared_P(x_perturbed, self.P)
+            h_perturbed = self.current_dynamic_x_plus - norm_x_perturbed_sq
+
+            # Calculate the i-th component of the gradient
+            grad_h[i] = (h_perturbed - h_current) / delta
+            
+        # Normalize the gradient to get a direction vector (optional but good practice)
+        norm_grad = np.linalg.norm(grad_h)
+        if norm_grad > 1e-6:
+            return grad_h / norm_grad
+        else:
+            return np.zeros(self.num_model_joints)
+        
     ### PRIMARY FUNCTIONS ###
     def load_robot(self):
         tmp_file_path = None
@@ -353,7 +378,6 @@ class BarrierDynamicsController(Node):
         finally:
             if tmp_file_path and os.path.exists(tmp_file_path): os.remove(tmp_file_path)
 
-
     def calculate_adaptive_terms(self):
 
         if not hasattr(self, 'x') or self.x is None:
@@ -363,6 +387,7 @@ class BarrierDynamicsController(Node):
             return
 
         norm_x = self.norm_squared_P(self.x, self.P)
+        self.get_logger().warn(f"The current state of the arm {self.arm_index} is {self.x.tolist()}")
         self.get_logger().warn(f"The current norm_x (for x_plus comparison) is {norm_x:.4f}")
 
         # Use self.current_dynamic_x_plus which is updated by update_current_dynamic_x_plus()
@@ -373,11 +398,13 @@ class BarrierDynamicsController(Node):
             self.lambda_1 = 0.0
             self.lambda_2 = 0.0
         else:
-            lambda_factor = (active_x_plus_boundary - norm_x) / active_x_plus_boundary
+            lambda_factor_1 = (active_x_plus_boundary - norm_x) / active_x_plus_boundary
+            lambda_factor_2 = active_x_plus_boundary / (active_x_plus_boundary - norm_x)
             # Ensure lambda_factor is not negative due to numerical precision if norm_x is extremely close to active_x_plus_boundary
-            lambda_factor = max(0.0, lambda_factor) 
-            self.lambda_1 = self.lambda_1_0 * (lambda_factor)**self.r
-            self.lambda_2 = self.lambda_2_0 * (lambda_factor)**self.r
+            lambda_factor_1 = max(0.0, lambda_factor_1) 
+            lambda_factor_2 = max(0.0, lambda_factor_2) 
+            self.lambda_1 = self.lambda_1_0 * (lambda_factor_1)**self.r
+            self.lambda_2 = self.lambda_2_0 * math.log(lambda_factor_2)
         # self.get_logger().info(f"DEBUG: norm_x={norm_x}, active_x_plus={active_x_plus_boundary}, factor={lambda_factor}, lambda1={self.lambda_1}")
 
 
@@ -446,6 +473,7 @@ class BarrierDynamicsController(Node):
         
         q_at_barrier = sol.q
         q_dot_at_barrier = np.zeros_like(q_at_barrier) 
+        # q_dot_at_barrier = self.joint_velocity_limits[1,:] * 1 # Use max velocity limit as a placeholder for q_dot at barrier point
         x_at_barrier = np.concatenate((q_at_barrier, q_dot_at_barrier))
         
         if not (isinstance(self.P, np.ndarray) and self.P.shape == (len(x_at_barrier), len(x_at_barrier))):
@@ -454,6 +482,7 @@ class BarrierDynamicsController(Node):
         
         self.get_logger().info(f"x state at barrier point: {x_at_barrier.tolist()}")
         x_plus_for_this_sphere = self.norm_squared_P(x_at_barrier, self.P)
+        self.get_logger().info(f"Arm {self.arm_index} - Calculated x_plus for spherical obstacle: {x_plus_for_this_sphere:.4f} (from norm_P(x_at_barrier))")
         return x_plus_for_this_sphere + self.epsilon
         
 
@@ -798,24 +827,43 @@ class BarrierDynamicsController(Node):
             # --- 4b. If target not reached, proceed with PD Control ---
             self.update_current_dynamic_x_plus() # This will set self.current_dynamic_x_plus #
             
-            error_q = self.target_joint_positions - self.current_joint_positions  #
-            error_q_dot = self.target_joint_velocities - self.current_joint_velocities #
+            error_q = self.target_joint_positions - self.current_joint_positions  
+            error_q_dot = self.target_joint_velocities - self.current_joint_velocities 
 
-            self.calculate_adaptive_terms() #
+            self.calculate_adaptive_terms() 
             #Log lambda values
             self.get_logger().warn(f"Arm {self.arm_index} - lambda_1 = {self.lambda_1:.2f}, lambda_2 = {self.lambda_2:.2f}")
             
 
-            pd_output_velocities = self.K_P @ error_q + self.K_D @ error_q_dot #
+            pd_output_velocities = self.K_P @ error_q + self.K_D @ error_q_dot 
 
-            # --- Apply Barrier Logic using lambda_1 ---
-            # Scale the PD output by lambda_1. As the robot approaches a boundary
-            # (norm_x -> current_dynamic_x_plus), lambda_1 -> 0, scaling down the command.
-            joint_velocities_raw = self.lambda_1 * pd_output_velocities
+
+            # --- Apply Barrier Logic: Combine PD with scaled avoidance term ---
             
+            # 1. Calculate the avoidance direction in joint space
+            q_dot_avoid_direction = self.calculate_joint_space_barrier_gradient()
+
+            # 2. Scale the avoidance term by lambda_2 and a gain
+            # The barrier_gain_param allows you to tune the "strength" of the repulsion
+            avoidance_term = self.lambda_2 * self.barrier_gain_param * q_dot_avoid_direction
+
+            # 3. Combine the goal-seeking term (PD) with the safety term (avoidance)
+            # The lambda_1 term scales down the movement towards the goal as you approach a barrier.
+            # The avoidance_term pushes you away from the barrier.
+            joint_velocities_raw = pd_output_velocities #(self.lambda_1 * pd_output_velocities) + avoidance_term
+
+            # Updated logging to show all components
+            if not np.isclose(self.lambda_2, 0.0, atol=0.01): # Log if avoidance is active
+                self.get_logger().info(
+                    f"Arm {self.arm_index} - Ctrl: L1={self.lambda_1:.2f}, L2={self.lambda_2:.2f} | "
+                    f"PD_Vel={[f'{v:.2f}' for v in pd_output_velocities]} | "
+                    f"Avoid_Term={[f'{v:.2f}' for v in avoidance_term]} | "
+                    f"Raw_Vel={[f'{v:.2f}' for v in joint_velocities_raw]}",
+                    throttle_duration_sec=0.2
+                )
+
             if not np.isclose(self.lambda_1, 1.0):
                 self.get_logger().info(f"Arm {self.arm_index} - Lambda_1: {self.lambda_1:.3f} applied. Original PD: {[f'{v:.3f}' for v in pd_output_velocities]}, Scaled: {[f'{v:.3f}' for v in joint_velocities_raw]}", throttle_duration_sec=1.0)
-
 
             joint_velocities_limited = np.clip(joint_velocities_raw.flatten(), #
                                                 self.joint_velocity_limits[0], #

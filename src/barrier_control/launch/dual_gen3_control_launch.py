@@ -228,6 +228,8 @@ def generate_launch_description():
                         'initial_pose_yaw': LaunchConfiguration("initial_pose_yaw_robot1"),
                         'controllers_file': robot1_controller_file,
                         'robot_controller': robot1_controller_name, # Specify this controller
+                        'use_internal_bus_gripper_comm': 'false',
+                        'gripper': '',
 
                         'rviz_file': 'view_robots.rviz', # Specify the RViz file for Robots
                         'description_package': LaunchConfiguration("description_package_robot1"),
@@ -512,6 +514,15 @@ def generate_launch_description():
 
     ld.add_action(OpaqueFunction(function=launch_rigid_body_dynamics_controller))
 
+    target_handler_node = Node(
+        package=barrier_control_pkg_name,
+        executable='target_handler',
+        name='target_handler',
+        output='screen'
+    )
+
+    ld.add_action(target_handler_node)
+    
     # robot1_fault_clearer_node = Node(
     #     package=barrier_control_pkg_name,
     #     executable='fault_clearer_node', # Name of the executable script

@@ -49,6 +49,7 @@ setup(
             'fault_clearer = barrier_control.scripts.fault_clearer_node:main',
             'barrier_dynamics_controller = barrier_control.barrier_dynamics_controller:main',
             'ik_test_node = barrier_control.ik_test_node:main',
+            'sequence_publisher_node = barrier_control.sequence_publisher_node:main',
         ],
     },
 )

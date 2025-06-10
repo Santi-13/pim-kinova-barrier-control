@@ -41,7 +41,7 @@ class RigidBodyDynamicsController(Node):
         self.declare_parameter('error_tolerance', [0.01, 0.01, 0.01, 0.05, 0.05, 0.05]) # [m, m, m, rad, rad, rad]
         self.declare_parameter('euler_input_convention', 'xyz')
         self.declare_parameter('j6_offset_time_s', 3.0) # Time for J6 to perform its offset move
-        self.declare_parameter('j6_offset_degrees', 35.0) # Offset for J6 in degrees for arm_index 1
+        self.declare_parameter('j6_offset_degrees', -31.0) # Offset for J6 in degrees for arm_index 1
 
         self.base_frame = self.get_parameter('base_frame').value
         self.tool_frame = self.get_parameter('tool_frame').value
