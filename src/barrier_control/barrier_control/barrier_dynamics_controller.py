@@ -56,19 +56,22 @@ class BarrierDynamicsController(Node):
 
 
         # Initialize dynamic parameters
-        self.declare_parameter('P', [1.0]*12) # Diagonal matrix P for norm calculation
-        self.declare_parameter('lambda_1_0', 1.0) # Initial value for lambda_1
-        self.declare_parameter('lambda_2_0', 1.0)
-        self.declare_parameter('r', 1.0) # Exponent for adaptive terms
+        self.declare_parameter('P', [0.01, 0.01, 0.01, 0.01, 0.01, 0.01]*2)        
+        self.declare_parameter('lambda_1_0', 10.0) # Initial value for lambda_1
+        self.declare_parameter('lambda_2_0', 0.1)
+        self.declare_parameter('r_1', 1.4) # Exponent for adaptive terms
+        self.declare_parameter('r_2', 2.0) # Exponent for adaptive terms
         self.declare_parameter('K_P_initial_diag', [1.0]*6) # Initial diagonal values for K_P
         self.declare_parameter('K_D_initial_diag', [1.0]*6)  # Initial diagonal values for K_D
-        self.declare_parameter('barrier_gain', 1.0)  # Gain for the q_dot_avoid term
+        self.declare_parameter('barrier_gain', 10.0)  # Gain for the q_dot_avoid term
         self.declare_parameter('h_denominator_offset', 0.01) # Small constant for h(x) denominator
+    
 
         self.P = np.diag(self.get_parameter('P').get_parameter_value().double_array_value)        
         self.lambda_1_0 = self.get_parameter('lambda_1_0').value
         self.lambda_2_0 = self.get_parameter('lambda_2_0').value
-        self.r = self.get_parameter('r').value
+        self.r_1 = self.get_parameter('r_1').value
+        self.r_2 = self.get_parameter('r_2').value
         self.K_P = np.diag(self.get_parameter('K_P_initial_diag').value)
         self.K_D = np.diag(self.get_parameter('K_D_initial_diag').value)
         self.barrier_gain_param = self.get_parameter('barrier_gain').get_parameter_value().double_value
@@ -78,7 +81,7 @@ class BarrierDynamicsController(Node):
         # Calculation parameters
         self.lambda_1 = 0.0
         self.lambda_2 = 0.0
-        self.epsilon = 1.5
+        self.epsilon = 0.00
 
         
         # --- TF2 Listener Setup ---
@@ -92,8 +95,8 @@ class BarrierDynamicsController(Node):
         max_position_limits_default = [ 1.0 * math.pi,     2.2,    2.58,    1.0 * math.pi,    2.099,  1.0 * math.pi]
         self.joint_position_limits = np.array((min_position_limits_default, max_position_limits_default))
 
-        min_velocity_limits_default = [-0.1]*6
-        max_velocity_limits_default = [ 0.1]*6
+        min_velocity_limits_default = [-0.2]*6
+        max_velocity_limits_default = [ 0.2]*6
         self.joint_velocity_limits = np.array([min_velocity_limits_default, max_velocity_limits_default])
 
         
@@ -152,7 +155,7 @@ class BarrierDynamicsController(Node):
              home_position_deg = [0.0, 15.0, -130.0, 0.0, 55.0, 90.0]
              home_position_rad = np.radians(home_position_deg)
              if len(home_position_rad) == len(self.controlled_joint_names):
-                 self.publish_target_joint_positions(home_position_rad, time_from_start=5.0)
+                 self.publish_target_joint_positions(home_position_rad, time_from_start=2.0)
              else:
                  self.get_logger().error(f"Home position length mismatch with controlled_joint_names. Skipping startup home.")
         else:
@@ -403,10 +406,9 @@ class BarrierDynamicsController(Node):
             # Ensure lambda_factor is not negative due to numerical precision if norm_x is extremely close to active_x_plus_boundary
             lambda_factor_1 = max(0.0, lambda_factor_1) 
             lambda_factor_2 = max(0.0, lambda_factor_2) 
-            self.lambda_1 = self.lambda_1_0 * (lambda_factor_1)**self.r
-            self.lambda_2 = self.lambda_2_0 * math.log(lambda_factor_2)
+            self.lambda_1 = self.lambda_1_0 * (lambda_factor_1)**self.r_1
+            self.lambda_2 = self.lambda_2_0 * math.log(lambda_factor_2)**self.r_2
         # self.get_logger().info(f"DEBUG: norm_x={norm_x}, active_x_plus={active_x_plus_boundary}, factor={lambda_factor}, lambda1={self.lambda_1}")
-
 
     def calculate_x_plus_for_spherical_obstacle(self, obstacle_center_base: np.ndarray, obstacle_radius: float) -> float | None:
         """
@@ -433,6 +435,11 @@ class BarrierDynamicsController(Node):
         if dist_obs_to_ee < 1e-6 : # Effectively at the center
             self.get_logger().warn(f"Arm {self.arm_index} - EE at center of spherical obstacle. Returning highly restrictive x_plus.")
             return 1e-9
+        
+        # If EE is double the radius away, return a very large x_plus to deactivate barrier
+        if dist_obs_to_ee > (2 * obstacle_radius):
+            self.get_logger().info(f"Arm {self.arm_index} - EE is far from spherical obstacle (dist: {dist_obs_to_ee:.3f} > 2*R: {2*obstacle_radius:.3f}). Returning large x_plus.")
+            return 1e6
 
         closest_point_on_sphere_surface_to_ee = obstacle_center_base + obstacle_radius * (vec_obs_to_ee / dist_obs_to_ee)
 
@@ -498,52 +505,80 @@ class BarrierDynamicsController(Node):
         marker_id_counter = 0 # To give unique IDs to markers
 
         # --- Example: Spherical Obstacle (coordinates in base frame) ---
-        obs1_center = np.array([0.5, 0.15, 0.6]) # Example obstacle
+        obs1_center = np.array([0.5, 0.15, 0.7]) # Example obstacle
         obs1_radius = 0.1
         x_plus_obs1 = self.calculate_x_plus_for_spherical_obstacle(obs1_center, obs1_radius)
         if x_plus_obs1 is not None and x_plus_obs1 > 0: # Ensure positive
             candidate_x_plus_values.append(x_plus_obs1)
         
         # Add a marker for this sphere
-        sphere_marker = Marker()
-        sphere_marker.header.frame_id = 'world' # IMPORTANT: Frame for the obstacle
-        sphere_marker.header.stamp = self.get_clock().now().to_msg()
-        sphere_marker.ns = f"spherical_obstacles_arm_{self.arm_index}"
-        sphere_marker.id = marker_id_counter
+        sphere_marker_1 = Marker()
+        sphere_marker_1.header.frame_id = 'world' # IMPORTANT: Frame for the obstacle
+        sphere_marker_1.header.stamp = self.get_clock().now().to_msg()
+        sphere_marker_1.ns = f"spherical_obstacles_arm_{self.arm_index}_{marker_id_counter}"
+        sphere_marker_1.id = marker_id_counter
         marker_id_counter += 1
-        sphere_marker.type = Marker.SPHERE
-        sphere_marker.action = Marker.ADD
+        sphere_marker_1.type = Marker.SPHERE
+        sphere_marker_1.action = Marker.ADD
 
-        sphere_marker.pose.position.x = obs1_center[0]
-        sphere_marker.pose.position.y = obs1_center[1]
-        sphere_marker.pose.position.z = obs1_center[2]
-        sphere_marker.pose.orientation.w = 1.0 # Identity quaternion for a sphere
+        sphere_marker_1.pose.position.x = obs1_center[0]
+        sphere_marker_1.pose.position.y = obs1_center[1]
+        sphere_marker_1.pose.position.z = obs1_center[2]
+        sphere_marker_1.pose.orientation.w = 1.0 # Identity quaternion for a sphere
 
-        sphere_marker.scale.x = obs1_radius * 2.0 # Diameter
-        sphere_marker.scale.y = obs1_radius * 2.0
-        sphere_marker.scale.z = obs1_radius * 2.0
+        sphere_marker_1.scale.x = obs1_radius * 2.0 # Diameter
+        sphere_marker_1.scale.y = obs1_radius * 2.0
+        sphere_marker_1.scale.z = obs1_radius * 2.0
 
-        sphere_marker.color.r = 1.0  # Red
-        sphere_marker.color.g = 0.0
-        sphere_marker.color.b = 0.0
-        sphere_marker.color.a = 0.3  # Semi-transparent
+        sphere_marker_1.color.r = 1.0  # Red
+        sphere_marker_1.color.g = 0.0
+        sphere_marker_1.color.b = 0.0
+        sphere_marker_1.color.a = 0.3  # Semi-transparent
 
-        # sphere_marker.lifetime = RclpyDuration(seconds=0.0).to_msg() # 0 = infinite/persistent until deleted
+        # sphere_marker_1.lifetime = RclpyDuration(seconds=0.0).to_msg() # 0 = infinite/persistent until deleted
         # For dynamic obstacles, you might set a short lifetime or manage ADD/DELETE actions.
         # For static ones, a longer lifetime or just publishing once might be okay,
         # but periodic publishing ensures it reappears if RViz is restarted.
         # Let's publish periodically by giving it a lifetime slightly longer than the update rate.
-        sphere_marker.lifetime = RclpyDuration(seconds=(1.0 / self.controller_frequency) * 2.5).to_msg()
+        sphere_marker_1.lifetime = RclpyDuration(seconds=(1.0 / self.controller_frequency) * 10.0).to_msg()
 
 
-        marker_array_msg.markers.append(sphere_marker)
+        marker_array_msg.markers.append(sphere_marker_1)
 
         # --- Example: Spherical Obstacle 2 ---
-        # obs2_center = np.array([0.5, -0.2, 0.3])
-        # obs2_radius = 0.05
-        # x_plus_obs2 = self.calculate_x_plus_for_spherical_obstacle(obs2_center, obs2_radius)
-        # if x_plus_obs2 is not None:
-        #     candidate_x_plus_values.append(x_plus_obs2)
+        obs2_center = np.array([0.0, 0.75, 0.4]) # Example obstacle
+        obs2_radius = 0.1
+        x_plus_obs2 = self.calculate_x_plus_for_spherical_obstacle(obs2_center, obs2_radius)
+        if x_plus_obs2 is not None and x_plus_obs2 > 0: # Ensure positive
+            candidate_x_plus_values.append(x_plus_obs2)
+        
+        # Add a marker for this sphere
+        sphere_marker_2 = Marker()
+        sphere_marker_2.header.frame_id = 'world' # IMPORTANT: Frame for the obstacle
+        sphere_marker_2.header.stamp = self.get_clock().now().to_msg()
+        sphere_marker_2.ns = f"spherical_obstacles_arm_{self.arm_index}_{marker_id_counter}"
+        sphere_marker_2.id = marker_id_counter
+        marker_id_counter += 1
+        sphere_marker_2.type = Marker.SPHERE
+        sphere_marker_2.action = Marker.ADD
+
+        sphere_marker_2.pose.position.x = obs2_center[0]
+        sphere_marker_2.pose.position.y = obs2_center[1]
+        sphere_marker_2.pose.position.z = obs2_center[2]
+        sphere_marker_2.pose.orientation.w = 1.0 # Identity quaternion for a sphere
+
+        sphere_marker_2.scale.x = obs2_radius * 2.0 # Diameter
+        sphere_marker_2.scale.y = obs2_radius * 2.0
+        sphere_marker_2.scale.z = obs2_radius * 2.0
+
+        sphere_marker_2.color.r = 0.0  # Red
+        sphere_marker_2.color.g = 0.0
+        sphere_marker_2.color.b = 1.0
+        sphere_marker_2.color.a = 0.3  # Semi-transparent
+
+        sphere_marker_2.lifetime = RclpyDuration(seconds=(1.0 / self.controller_frequency) * 10.0).to_msg()
+
+        marker_array_msg.markers.append(sphere_marker_2)
         
         # --- Robot-Robot Avoidance (Conceptual) ---
         # If you have the state x_other_robot of the other robot, your markdown says:
@@ -565,10 +600,34 @@ class BarrierDynamicsController(Node):
             self.get_logger().warn(f"Arm {self.arm_index} - No positive candidate x_plus values. Using small default fallback.")
             self.current_dynamic_x_plus = 1e-6 
         else:
-            new_dynamic_x_plus = min(positive_candidates)
+            # This is the most restrictive (smallest) potential boundary from all sources
+            potential_next_x_plus = min(positive_candidates) 
+
+            # Get the norm of the current state right now.
+            current_norm_x = self.norm_squared_P(self.x, self.P) 
+
+            # THE "DESCENDING CEILING" LOGIC:
+            # If the new potential boundary is already being violated by our current state...
+            if potential_next_x_plus < current_norm_x:
+                # ...don't just slam the boundary down. 
+                # Instead, set the boundary to be our current position plus a small buffer.
+                # This gives the robot a chance to move away from a slowly descending ceiling,
+                # rather than having a wall appear on top of it.
+                # The avoidance term (lambda_2) will activate and push it away from this ceiling.
+                new_dynamic_x_plus = current_norm_x * 1.1 # e.g., 10% buffer
+                self.get_logger().warn(
+                    f"Arm {self.arm_index} - Potential x_plus ({potential_next_x_plus:.4f}) is too restrictive for current norm_x ({current_norm_x:.4f}). "
+                    f"Applying descending ceiling: new x_plus = {new_dynamic_x_plus:.4f}",
+                    throttle_duration_sec=1.0
+                )
+            else:
+                # It's safe to adopt the new, more restrictive boundary.
+                new_dynamic_x_plus = potential_next_x_plus 
+
             # Only log if it changes significantly to reduce noise
-            if not np.isclose(new_dynamic_x_plus, self.current_dynamic_x_plus):
-                 self.get_logger().info(f"Arm {self.arm_index} - Updated current_dynamic_x_plus from {self.current_dynamic_x_plus:.4f} to {new_dynamic_x_plus:.4f}")
+            if not np.isclose(new_dynamic_x_plus, self.current_dynamic_x_plus): #
+                 self.get_logger().info(f"Arm {self.arm_index} - Updated current_dynamic_x_plus from {self.current_dynamic_x_plus:.4f} to {new_dynamic_x_plus:.4f}") #
+            
             self.current_dynamic_x_plus = new_dynamic_x_plus
 
     
@@ -728,7 +787,7 @@ class BarrierDynamicsController(Node):
                 self.executing_cartesian_phase = False #
                 return #
 
-            sol = self.robot.ikine_NR( #
+            sol = self.robot.ikine_LM( #
                 Tep=target_pose_rtb, 
                 q0=q_initial_guess, 
                 joint_limits=True 
@@ -850,13 +909,14 @@ class BarrierDynamicsController(Node):
             # 3. Combine the goal-seeking term (PD) with the safety term (avoidance)
             # The lambda_1 term scales down the movement towards the goal as you approach a barrier.
             # The avoidance_term pushes you away from the barrier.
-            joint_velocities_raw = pd_output_velocities #(self.lambda_1 * pd_output_velocities) + avoidance_term
+            joint_velocities_raw = (self.lambda_1 * pd_output_velocities) + avoidance_term
 
             # Updated logging to show all components
             if not np.isclose(self.lambda_2, 0.0, atol=0.01): # Log if avoidance is active
                 self.get_logger().info(
                     f"Arm {self.arm_index} - Ctrl: L1={self.lambda_1:.2f}, L2={self.lambda_2:.2f} | "
                     f"PD_Vel={[f'{v:.2f}' for v in pd_output_velocities]} | "
+                    f"Avoid direction={[f'{v:.2f}' for v in q_dot_avoid_direction]} | "
                     f"Avoid_Term={[f'{v:.2f}' for v in avoidance_term]} | "
                     f"Raw_Vel={[f'{v:.2f}' for v in joint_velocities_raw]}",
                     throttle_duration_sec=0.2

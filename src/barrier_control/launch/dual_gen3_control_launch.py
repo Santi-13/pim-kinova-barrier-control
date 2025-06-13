@@ -321,7 +321,7 @@ def generate_launch_description():
                         'controlled_joint_names': [f'{robot1_namespace}/joint_1', f'{robot1_namespace}/joint_2', f'{robot1_namespace}/joint_3', f'{robot1_namespace}/joint_4', f'{robot1_namespace}/joint_5', f'{robot1_namespace}/joint_6'],
                         # --- Control Settings & Topic Names ---
                         'joint_limit_buffer': 0.01, # Small buffer (rad or m) for joint position limits
-                        'controller_frequency': 5.0, # Control loop frequency in Hz
+                        'controller_frequency': 10.0, # Control loop frequency in Hz
                         'error_tolerance': [0.02] * 3 + [0.1]*3, # Pos [m], Orient [rad]
                         'joint_state_topic': robot1_joint_state_topic,
                         'target_pose_topic': robot1_target_pose_topic,
@@ -465,16 +465,16 @@ def generate_launch_description():
                         'robot_tool_frame': f"{robot2_namespace}/end_effector_link",
                         # --- Controller Gains & Settings ---
                         # Kp gains [x, y, z, rx, ry, rz] - Tune these values!
-                        'K_P_initial_diag': [0.4]*6, # Reduced for slower movement
-                        'K_D_initial_diag': [0.015]*3 + [0.015] * 3,
+                        'K_P_initial_diag': [0.6]*6, # Reduced for slower movement
+                        'K_D_initial_diag': [0.02]*3 + [0.015] * 3,
                         'euler_input_convention': 'quat', # Convention for interpreting target orientation if given as Euler: 'xyz', 'zyx', etc.
                         # --- Joint Specific Settings ---
                         # IMPORTANT: List joint names in the order your robot model (and RTB) expects them.
                         'controlled_joint_names': [f'{robot2_namespace}/joint_1', f'{robot2_namespace}/joint_2', f'{robot2_namespace}/joint_3', f'{robot2_namespace}/joint_4', f'{robot2_namespace}/joint_5', f'{robot2_namespace}/joint_6'],
                         # --- Control Settings & Topic Names ---
                         'joint_limit_buffer': 0.01, # Small buffer (rad or m) for joint position limits
-                        'controller_frequency': 5.0, # Control loop frequency in Hz
-                        'error_tolerance': [0.02] * 3 + [0.1]*3, # Pos [m], Orient [rad]
+                        'controller_frequency': 10.0, # Control loop frequency in Hz
+                        'error_tolerance': [0.05] * 3 + [0.1]*3, # Pos [m], Orient [rad]
                         'joint_state_topic': robot2_joint_state_topic,
                         'target_pose_topic': robot2_target_pose_topic,
                         'joint_trajectory_topic': robot2_joint_trajectory_topic,
