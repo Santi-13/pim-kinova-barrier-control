@@ -63,7 +63,7 @@ class BarrierDynamicsController(Node):
         self.declare_parameter('r_2', 2.0) # Exponent for adaptive terms
         self.declare_parameter('K_P_initial_diag', [1.0]*6) # Initial diagonal values for K_P
         self.declare_parameter('K_D_initial_diag', [1.0]*6)  # Initial diagonal values for K_D
-        self.declare_parameter('barrier_gain', 10.0)  # Gain for the q_dot_avoid term
+        self.declare_parameter('barrier_gain', 20.0)  # Gain for the q_dot_avoid term
         self.declare_parameter('h_denominator_offset', 0.01) # Small constant for h(x) denominator
     
 
@@ -81,7 +81,7 @@ class BarrierDynamicsController(Node):
         # Calculation parameters
         self.lambda_1 = 0.0
         self.lambda_2 = 0.0
-        self.epsilon = 0.00
+        self.epsilon = 0.007
 
         
         # --- TF2 Listener Setup ---
@@ -603,26 +603,26 @@ class BarrierDynamicsController(Node):
             # This is the most restrictive (smallest) potential boundary from all sources
             potential_next_x_plus = min(positive_candidates) 
 
-            # Get the norm of the current state right now.
-            current_norm_x = self.norm_squared_P(self.x, self.P) 
+            # # Get the norm of the current state right now.
+            # current_norm_x = self.norm_squared_P(self.x, self.P) 
 
-            # THE "DESCENDING CEILING" LOGIC:
-            # If the new potential boundary is already being violated by our current state...
-            if potential_next_x_plus < current_norm_x:
-                # ...don't just slam the boundary down. 
-                # Instead, set the boundary to be our current position plus a small buffer.
-                # This gives the robot a chance to move away from a slowly descending ceiling,
-                # rather than having a wall appear on top of it.
-                # The avoidance term (lambda_2) will activate and push it away from this ceiling.
-                new_dynamic_x_plus = current_norm_x * 1.1 # e.g., 10% buffer
-                self.get_logger().warn(
-                    f"Arm {self.arm_index} - Potential x_plus ({potential_next_x_plus:.4f}) is too restrictive for current norm_x ({current_norm_x:.4f}). "
-                    f"Applying descending ceiling: new x_plus = {new_dynamic_x_plus:.4f}",
-                    throttle_duration_sec=1.0
-                )
-            else:
-                # It's safe to adopt the new, more restrictive boundary.
-                new_dynamic_x_plus = potential_next_x_plus 
+            # # THE "DESCENDING CEILING" LOGIC:
+            # # If the new potential boundary is already being violated by our current state...
+            # if potential_next_x_plus < current_norm_x:
+            #     # ...don't just slam the boundary down. 
+            #     # Instead, set the boundary to be our current position plus a small buffer.
+            #     # This gives the robot a chance to move away from a slowly descending ceiling,
+            #     # rather than having a wall appear on top of it.
+            #     # The avoidance term (lambda_2) will activate and push it away from this ceiling.
+            #     new_dynamic_x_plus = current_norm_x * 1.05 # e.g., 5% buffer
+            #     self.get_logger().warn(
+            #         f"Arm {self.arm_index} - Potential x_plus ({potential_next_x_plus:.4f}) is too restrictive for current norm_x ({current_norm_x:.4f}). "
+            #         f"Applying descending ceiling: new x_plus = {new_dynamic_x_plus:.4f}",
+            #         throttle_duration_sec=1.0
+            #     )
+            # else:
+            #     # It's safe to adopt the new, more restrictive boundary.
+            new_dynamic_x_plus = potential_next_x_plus 
 
             # Only log if it changes significantly to reduce noise
             if not np.isclose(new_dynamic_x_plus, self.current_dynamic_x_plus): #
