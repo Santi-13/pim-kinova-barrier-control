@@ -21,7 +21,6 @@ setup(
             'urdf/rrbot.xacro',
             ]),
         ('share/' + package_name + '/config', [
-            'config/cart_controller_velocity.yaml',
             'config/rrbot_controllers.yaml',
             ]),
         ('share/' + package_name + '/scripts', [
@@ -44,12 +43,10 @@ setup(
         'console_scripts': [
             'rigid_body_dynamics_controller = barrier_control.rigid_body_dynamics_controller:main',
             'target_handler = barrier_control.target_handler:main',
-            'kortex_dual_arm_node = barrier_control.kortex_dual_arm_node:main',
             'gripper_tcp_node = barrier_control.gripper_tcp_node:main',
-            'fault_clearer = barrier_control.scripts.fault_clearer_node:main',
             'barrier_dynamics_controller = barrier_control.barrier_dynamics_controller:main',
-            'ik_test_node = barrier_control.ik_test_node:main',
             'sequence_publisher_node = barrier_control.sequence_publisher_node:main',
+            'joint_barrier_publisher = barrier_control.joint_barrier_publisher:main',
         ],
     },
 )

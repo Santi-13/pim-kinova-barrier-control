@@ -171,6 +171,8 @@ def generate_launch_description():
 
     
     def launch_rigid_body_dynamics_controller(context):
+        
+        control_frequency = 6.0  # Default control frequency
         # --- Robot 1 Configuration ---
         robot1_namespace = 'robot1'
         robot1_controller_name = 'joint_trajectory_controller' \
@@ -268,7 +270,7 @@ def generate_launch_description():
                         'max_joint_velocities': [0.2] * 6, 
                         # --- Control Settings & Topic Names ---
                         'joint_limit_buffer': 0.01, # Small buffer (rad or m) for joint position limits
-                        'control_frequency': 5.0, # Control loop frequency in Hz
+                        'control_frequency': control_frequency, # Control loop frequency in Hz
                         'error_tolerance': [0.02] * 3 + [0.1]*3, # Pos [m], Orient [rad]
                         'joint_state_topic': robot1_joint_state_topic,
                         'target_pose_topic': robot1_target_pose_topic,
@@ -318,10 +320,17 @@ def generate_launch_description():
                         'euler_input_convention': 'quat', # Convention for interpreting target orientation if given as Euler: 'xyz', 'zyx', etc.
                         # --- Joint Specific Settings ---
                         # IMPORTANT: List joint names in the order your robot model (and RTB) expects them.
-                        'controlled_joint_names': [f'{robot1_namespace}/joint_1', f'{robot1_namespace}/joint_2', f'{robot1_namespace}/joint_3', f'{robot1_namespace}/joint_4', f'{robot1_namespace}/joint_5', f'{robot1_namespace}/joint_6'],
+                        'controlled_joint_names': [
+                            f'{robot1_namespace}/joint_1', 
+                            f'{robot1_namespace}/joint_2', 
+                            f'{robot1_namespace}/joint_3',
+                            f'{robot1_namespace}/joint_4', 
+                            f'{robot1_namespace}/joint_5', 
+                            f'{robot1_namespace}/joint_6'
+                        ],
                         # --- Control Settings & Topic Names ---
                         'joint_limit_buffer': 0.01, # Small buffer (rad or m) for joint position limits
-                        'controller_frequency': 10.0, # Control loop frequency in Hz
+                        'controller_frequency': control_frequency, # Control loop frequency in Hz
                         'error_tolerance': [0.02] * 3 + [0.1]*3, # Pos [m], Orient [rad]
                         'joint_state_topic': robot1_joint_state_topic,
                         'target_pose_topic': robot1_target_pose_topic,
@@ -329,10 +338,66 @@ def generate_launch_description():
                         # --- Velocity Command Service Parameters ---
                         'arm_index': 0,
                         # --- Robot Description ---
+                        'use_fake_hardware': use_fake_hardware,
                         'robot_description_package': 'kortex_description', # Your robot description package
                         'robot_description_xacro_path': 'robots/gen3.xacro', # Relative path within the package
                         # Arguments passed to xacro - adjust as needed for your URDF/XACRO
 
+                        'xacro_args': PythonExpression([
+                            "'dof:=6 use_fake_hardware:=",
+                            use_fake_hardware,
+                            " robot_ip:=dummy2 prefix:=", # dummy2 is fine for xacro context
+                            robot1_namespace, "/", # Prefix for namespacing in URDF
+                            " initial_pose_x:=", LaunchConfiguration("initial_pose_x_robot1"),
+                            " initial_pose_y:=", LaunchConfiguration("initial_pose_y_robot1"),
+                            " initial_pose_z:=", LaunchConfiguration("initial_pose_z_robot1"),
+                            " initial_pose_roll:=", LaunchConfiguration("initial_pose_roll_robot1"),
+                            " initial_pose_pitch:=", LaunchConfiguration("initial_pose_pitch_robot1"),
+                            " initial_pose_yaw:=", LaunchConfiguration("initial_pose_yaw_robot1"),
+                            " sim_gazebo:=", 
+                            sim_gazebo, " sim_ignition:=",
+                            sim_ignition, " robot_controller:=",
+                            robot1_controller_name, "'" # Make sure spacing is correct for the final xacro string
+                        ]),
+                    }]
+                ),
+                Node(
+                    package=barrier_control_pkg_name,
+                    executable='joint_barrier_publisher',
+                    name='joint_barrier_publisher',
+                    output='screen',
+                    emulate_tty=True,
+                    parameters=[{
+                        'robot_base_frame': f"{robot1_namespace}/base_link",
+                        'robot_tool_frame': f"{robot1_namespace}/end_effector_link",
+                        # --- Controller Gains & Settings ---
+                        'update_frequency': control_frequency,
+                        'robot_description_package': 'kortex_description',
+                        'robot_description_xacro_path': 'robots/gen3.xacro',
+                        # --- Joint Barrier Settings ---
+                        'joint_names_for_barriers': [
+                            f'{robot1_namespace}/joint_1', 
+                            f'{robot1_namespace}/joint_2', 
+                            f'{robot1_namespace}/joint_3',
+                            f'{robot1_namespace}/joint_4', 
+                            f'{robot1_namespace}/joint_5', 
+                            f'{robot1_namespace}/joint_6'
+                        ],
+                        'link_names_for_barriers': [
+                            f'{robot1_namespace}/shoulder_link', 
+                            f'{robot1_namespace}/bicep_link', 
+                            f'{robot1_namespace}/forearm_link',
+                            f'{robot1_namespace}/spherical_wrist_1_link', 
+                            f'{robot1_namespace}/spherical_wrist_2_link', 
+                            f'{robot1_namespace}/end_effector_link'
+                        ],
+                        'joint_barrier_radii': [0.1, 0.1, 0.1, 0.1, 0.1, 0.08], # Radii in meters for each joint barrier
+                        'barrier_color': [0.0, 1.0, 1.0, 0.5], # RGBA color for the barriers
+                        # --- Topic Names ---
+                        'joint_state_topic': robot1_joint_state_topic,
+                        'joint_barriers_markers_topic': f"dynamic_joint_barriers_markers", 
+                        'joint_barriers_topic': f"dynamic_joint_barriers",
+                        # --- Xacro Arguments ---
                         'xacro_args': PythonExpression([
                             "'dof:=6 use_fake_hardware:=",
                             use_fake_hardware,
@@ -419,7 +484,7 @@ def generate_launch_description():
                         'max_joint_velocities': [0.1] * 6, 
                         # --- Control Settings & Topic Names ---
                         'joint_limit_buffer': 0.01, # Small buffer (rad or m) for joint position limits
-                        'control_frequency': 5.0, # Control loop frequency in Hz
+                        'control_frequency': control_frequency, # Control loop frequency in Hz
                         'error_tolerance': [0.02] * 3 + [0.1]*3, # Pos [m], Orient [rad]
                         'joint_state_topic': robot2_joint_state_topic,
                         'target_pose_topic': robot2_target_pose_topic,
@@ -465,7 +530,7 @@ def generate_launch_description():
                         'robot_tool_frame': f"{robot2_namespace}/end_effector_link",
                         # --- Controller Gains & Settings ---
                         # Kp gains [x, y, z, rx, ry, rz] - Tune these values!
-                        'K_P_initial_diag': [0.6]*6, # Reduced for slower movement
+                        'K_P_initial_diag': [0.5]*6, # Reduced for slower movement
                         'K_D_initial_diag': [0.02]*3 + [0.015] * 3,
                         'euler_input_convention': 'quat', # Convention for interpreting target orientation if given as Euler: 'xyz', 'zyx', etc.
                         # --- Joint Specific Settings ---
@@ -473,7 +538,7 @@ def generate_launch_description():
                         'controlled_joint_names': [f'{robot2_namespace}/joint_1', f'{robot2_namespace}/joint_2', f'{robot2_namespace}/joint_3', f'{robot2_namespace}/joint_4', f'{robot2_namespace}/joint_5', f'{robot2_namespace}/joint_6'],
                         # --- Control Settings & Topic Names ---
                         'joint_limit_buffer': 0.01, # Small buffer (rad or m) for joint position limits
-                        'controller_frequency': 10.0, # Control loop frequency in Hz
+                        'controller_frequency': control_frequency, # Control loop frequency in Hz
                         'error_tolerance': [0.05] * 3 + [0.1]*3, # Pos [m], Orient [rad]
                         'joint_state_topic': robot2_joint_state_topic,
                         'target_pose_topic': robot2_target_pose_topic,
@@ -481,10 +546,66 @@ def generate_launch_description():
                         # --- Velocity Command Service Parameters ---
                         'arm_index': 1,
                         # --- Robot Description ---
+                        'use_fake_hardware': use_fake_hardware,
                         'robot_description_package': 'kortex_description', # Your robot description package
                         'robot_description_xacro_path': 'robots/gen3.xacro', # Relative path within the package
                         # Arguments passed to xacro - adjust as needed for your URDF/XACRO
 
+                        'xacro_args': PythonExpression([
+                            "'dof:=6 use_fake_hardware:=",
+                            use_fake_hardware,
+                            " robot_ip:=dummy2 prefix:=", # dummy2 is fine for xacro context
+                            robot2_namespace, "/", # Prefix for namespacing in URDF
+                            " initial_pose_x:=", LaunchConfiguration("initial_pose_x_robot2"),
+                            " initial_pose_y:=", LaunchConfiguration("initial_pose_y_robot2"),
+                            " initial_pose_z:=", LaunchConfiguration("initial_pose_z_robot2"),
+                            " initial_pose_roll:=", LaunchConfiguration("initial_pose_roll_robot2"),
+                            " initial_pose_pitch:=", LaunchConfiguration("initial_pose_pitch_robot2"),
+                            " initial_pose_yaw:=", LaunchConfiguration("initial_pose_yaw_robot2"),
+                            " sim_gazebo:=", 
+                            sim_gazebo, " sim_ignition:=",
+                            sim_ignition, " robot_controller:=",
+                            robot2_controller_name, "'" # Make sure spacing is correct for the final xacro string
+                        ]),
+                    }]
+                ),
+                Node(
+                    package=barrier_control_pkg_name,
+                    executable='joint_barrier_publisher',
+                    name='joint_barrier_publisher',
+                    output='screen',
+                    emulate_tty=True,
+                    parameters=[{
+                        'robot_base_frame': f"{robot2_namespace}/base_link",
+                        'robot_tool_frame': f"{robot2_namespace}/end_effector_link",
+                        # --- Controller Gains & Settings ---
+                        'update_frequency': control_frequency,
+                        'robot_description_package': 'kortex_description',
+                        'robot_description_xacro_path': 'robots/gen3.xacro',
+                        # --- Joint Barrier Settings ---
+                        'joint_names_for_barriers': [
+                            f'{robot2_namespace}/joint_1', 
+                            f'{robot2_namespace}/joint_2', 
+                            f'{robot2_namespace}/joint_3',
+                            f'{robot2_namespace}/joint_4', 
+                            f'{robot2_namespace}/joint_5', 
+                            f'{robot2_namespace}/joint_6'
+                        ],
+                        'link_names_for_barriers': [
+                            f'{robot2_namespace}/shoulder_link', 
+                            f'{robot2_namespace}/bicep_link', 
+                            f'{robot2_namespace}/forearm_link',
+                            f'{robot2_namespace}/spherical_wrist_1_link', 
+                            f'{robot2_namespace}/spherical_wrist_2_link', 
+                            f'{robot2_namespace}/end_effector_link'
+                        ],
+                        'joint_barrier_radii': [0.1, 0.1, 0.1, 0.1, 0.1, 0.08], # Radii in meters for each joint barrier
+                        'barrier_color': [0.6, 0.1, 0.1, 0.5], # RGBA color for the barriers
+                        # --- Topic Names ---
+                        'joint_state_topic': robot2_joint_state_topic,
+                        'joint_barriers_markers_topic': f"dynamic_joint_barriers_markers", 
+                        'joint_barriers_topic': f"dynamic_joint_barriers",
+                        # --- Xacro Arguments ---
                         'xacro_args': PythonExpression([
                             "'dof:=6 use_fake_hardware:=",
                             use_fake_hardware,

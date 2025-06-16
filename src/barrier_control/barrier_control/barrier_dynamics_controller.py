@@ -26,6 +26,7 @@ class BarrierDynamicsController(Node):
 
 
         # Initialize parameters
+        self.declare_parameter('use_fake_hardware', True)
         self.declare_parameter('controller_frequency', 10.0) # Hz
         self.declare_parameter('robot_description_package', 'kortex_description')
         self.declare_parameter('robot_description_xacro_path', 'robots/gen3.xacro')
@@ -41,6 +42,7 @@ class BarrierDynamicsController(Node):
         self.declare_parameter('cartesian_rot_tolerance', 0.05) # radians (approx 2.8 degrees)   
         self.declare_parameter('robot_base_frame', 'base_link') # Default   
         
+        use_fake_hardware = self.get_parameter('use_fake_hardware').value
         self.controller_frequency = self.get_parameter('controller_frequency').value
         self.controlled_joint_names = self.get_parameter('controlled_joint_names').value
         self.num_model_joints = len(self.controlled_joint_names) # Initialize based on controller config
@@ -56,14 +58,14 @@ class BarrierDynamicsController(Node):
 
 
         # Initialize dynamic parameters
-        self.declare_parameter('P', [0.01, 0.01, 0.01, 0.01, 0.01, 0.01]*2)        
+        self.declare_parameter('P', [0.02, 0.02, 0.02, 0.01, 0.01, 0.01]*2)        
         self.declare_parameter('lambda_1_0', 10.0) # Initial value for lambda_1
         self.declare_parameter('lambda_2_0', 0.1)
         self.declare_parameter('r_1', 1.4) # Exponent for adaptive terms
         self.declare_parameter('r_2', 2.0) # Exponent for adaptive terms
         self.declare_parameter('K_P_initial_diag', [1.0]*6) # Initial diagonal values for K_P
         self.declare_parameter('K_D_initial_diag', [1.0]*6)  # Initial diagonal values for K_D
-        self.declare_parameter('barrier_gain', 20.0)  # Gain for the q_dot_avoid term
+        self.declare_parameter('barrier_gain', 1.0/2)  # Gain for the q_dot_avoid term
         self.declare_parameter('h_denominator_offset', 0.01) # Small constant for h(x) denominator
     
 
@@ -84,19 +86,22 @@ class BarrierDynamicsController(Node):
         self.epsilon = 0.007
 
         
-        # --- TF2 Listener Setup ---
+        # TF2 Listener Setup
         self.tf_buffer = tf2_ros.Buffer()
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
 
 
         # Default limits, will be overwritten by URDF if available
         min_position_limits_default = [-1.0 * math.pi,    -2.2,   -2.58,   -1.0 * math.pi,   -2.099, -1.0 * math.pi]
-        # min_position_limits_default = [0.0] * 6
         max_position_limits_default = [ 1.0 * math.pi,     2.2,    2.58,    1.0 * math.pi,    2.099,  1.0 * math.pi]
         self.joint_position_limits = np.array((min_position_limits_default, max_position_limits_default))
 
-        min_velocity_limits_default = [-0.2]*6
-        max_velocity_limits_default = [ 0.2]*6
+        if use_fake_hardware:
+            min_velocity_limits_default = [-0.35]*6
+            max_velocity_limits_default = [ 0.35]*6
+        else:
+            min_velocity_limits_default = [-0.2]*6
+            max_velocity_limits_default = [ 0.2]*6
         self.joint_velocity_limits = np.array([min_velocity_limits_default, max_velocity_limits_default])
 
         
@@ -108,6 +113,7 @@ class BarrierDynamicsController(Node):
         # Subscribers 
         self.joint_state_subscription = self.create_subscription(
             JointState, joint_state_topic, self.joint_state_callback, 10)
+        self.get_logger().info(f"Subscribed to joint states on: {joint_state_topic}")
         self.current_joint_positions = None
         self.current_joint_velocities = None
         self.joint_states_received_once = False # For robust startup
@@ -155,7 +161,7 @@ class BarrierDynamicsController(Node):
              home_position_deg = [0.0, 15.0, -130.0, 0.0, 55.0, 90.0]
              home_position_rad = np.radians(home_position_deg)
              if len(home_position_rad) == len(self.controlled_joint_names):
-                 self.publish_target_joint_positions(home_position_rad, time_from_start=2.0)
+                 self.publish_target_joint_positions(home_position_rad, time_from_start=3.0)
              else:
                  self.get_logger().error(f"Home position length mismatch with controlled_joint_names. Skipping startup home.")
         else:
@@ -437,7 +443,7 @@ class BarrierDynamicsController(Node):
             return 1e-9
         
         # If EE is double the radius away, return a very large x_plus to deactivate barrier
-        if dist_obs_to_ee > (2 * obstacle_radius):
+        if dist_obs_to_ee > (2.1 * obstacle_radius):
             self.get_logger().info(f"Arm {self.arm_index} - EE is far from spherical obstacle (dist: {dist_obs_to_ee:.3f} > 2*R: {2*obstacle_radius:.3f}). Returning large x_plus.")
             return 1e6
 
@@ -505,7 +511,7 @@ class BarrierDynamicsController(Node):
         marker_id_counter = 0 # To give unique IDs to markers
 
         # --- Example: Spherical Obstacle (coordinates in base frame) ---
-        obs1_center = np.array([0.5, 0.15, 0.7]) # Example obstacle
+        obs1_center = np.array([0.0, -0.75, 0.6]) # Example obstacle
         obs1_radius = 0.1
         x_plus_obs1 = self.calculate_x_plus_for_spherical_obstacle(obs1_center, obs1_radius)
         if x_plus_obs1 is not None and x_plus_obs1 > 0: # Ensure positive
@@ -579,6 +585,41 @@ class BarrierDynamicsController(Node):
         sphere_marker_2.lifetime = RclpyDuration(seconds=(1.0 / self.controller_frequency) * 10.0).to_msg()
 
         marker_array_msg.markers.append(sphere_marker_2)
+
+        # --- Example: Spherical Obstacle 3 ---
+        obs3_center = np.array([0.25, 0.45, 0.55]) # Example obstacle
+        obs3_radius = 0.1
+        x_plus_obs3 = self.calculate_x_plus_for_spherical_obstacle(obs3_center, obs3_radius)
+        if x_plus_obs3 is not None and x_plus_obs3 > 0: # Ensure positive
+            candidate_x_plus_values.append(x_plus_obs3)
+        
+        # Add a marker for this sphere
+        sphere_marker_3 = Marker()
+        sphere_marker_3.header.frame_id = 'world' # IMPORTANT: Frame for the obstacle
+        sphere_marker_3.header.stamp = self.get_clock().now().to_msg()
+        sphere_marker_3.ns = f"spherical_obstacles_arm_{self.arm_index}_{marker_id_counter}"
+        sphere_marker_3.id = marker_id_counter
+        marker_id_counter += 1
+        sphere_marker_3.type = Marker.SPHERE
+        sphere_marker_3.action = Marker.ADD
+
+        sphere_marker_3.pose.position.x = obs3_center[0]
+        sphere_marker_3.pose.position.y = obs3_center[1]
+        sphere_marker_3.pose.position.z = obs3_center[2]
+        sphere_marker_3.pose.orientation.w = 1.0 # Identity quaternion for a sphere
+
+        sphere_marker_3.scale.x = obs3_radius * 2.0 # Diameter
+        sphere_marker_3.scale.y = obs3_radius * 2.0
+        sphere_marker_3.scale.z = obs3_radius * 2.0
+
+        sphere_marker_3.color.r = 0.0  # Red
+        sphere_marker_3.color.g = 1.0
+        sphere_marker_3.color.b = 0.0
+        sphere_marker_3.color.a = 0.3  # Semi-transparent
+
+        sphere_marker_3.lifetime = RclpyDuration(seconds=(1.0 / self.controller_frequency) * 10.0).to_msg()
+
+        marker_array_msg.markers.append(sphere_marker_3)
         
         # --- Robot-Robot Avoidance (Conceptual) ---
         # If you have the state x_other_robot of the other robot, your markdown says:
@@ -603,26 +644,26 @@ class BarrierDynamicsController(Node):
             # This is the most restrictive (smallest) potential boundary from all sources
             potential_next_x_plus = min(positive_candidates) 
 
-            # # Get the norm of the current state right now.
-            # current_norm_x = self.norm_squared_P(self.x, self.P) 
+            # Get the norm of the current state right now.
+            current_norm_x = self.norm_squared_P(self.x, self.P) 
 
-            # # THE "DESCENDING CEILING" LOGIC:
-            # # If the new potential boundary is already being violated by our current state...
-            # if potential_next_x_plus < current_norm_x:
-            #     # ...don't just slam the boundary down. 
-            #     # Instead, set the boundary to be our current position plus a small buffer.
-            #     # This gives the robot a chance to move away from a slowly descending ceiling,
-            #     # rather than having a wall appear on top of it.
-            #     # The avoidance term (lambda_2) will activate and push it away from this ceiling.
-            #     new_dynamic_x_plus = current_norm_x * 1.05 # e.g., 5% buffer
-            #     self.get_logger().warn(
-            #         f"Arm {self.arm_index} - Potential x_plus ({potential_next_x_plus:.4f}) is too restrictive for current norm_x ({current_norm_x:.4f}). "
-            #         f"Applying descending ceiling: new x_plus = {new_dynamic_x_plus:.4f}",
-            #         throttle_duration_sec=1.0
-            #     )
-            # else:
-            #     # It's safe to adopt the new, more restrictive boundary.
-            new_dynamic_x_plus = potential_next_x_plus 
+            # THE "DESCENDING CEILING" LOGIC:
+            # If the new potential boundary is already being violated by our current state...
+            if potential_next_x_plus < current_norm_x:
+                # ...don't just slam the boundary down. 
+                # Instead, set the boundary to be our current position plus a small buffer.
+                # This gives the robot a chance to move away from a slowly descending ceiling,
+                # rather than having a wall appear on top of it.
+                # The avoidance term (lambda_2) will activate and push it away from this ceiling.
+                new_dynamic_x_plus = current_norm_x * 1.05 # e.g., 5% buffer
+                self.get_logger().warn(
+                    f"Arm {self.arm_index} - Potential x_plus ({potential_next_x_plus:.4f}) is too restrictive for current norm_x ({current_norm_x:.4f}). "
+                    f"Applying descending ceiling: new x_plus = {new_dynamic_x_plus:.4f}",
+                    throttle_duration_sec=1.0
+                )
+            else:
+                # It's safe to adopt the new, more restrictive boundary.
+                new_dynamic_x_plus = potential_next_x_plus 
 
             # Only log if it changes significantly to reduce noise
             if not np.isclose(new_dynamic_x_plus, self.current_dynamic_x_plus): #
