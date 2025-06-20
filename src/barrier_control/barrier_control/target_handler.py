@@ -24,8 +24,8 @@ class TargetHandler(Node):
         self.publisher_robot1 = self.create_publisher(PoseStamped, '/robot1/target_pose', 10)
         self.publisher_robot2 = self.create_publisher(PoseStamped, '/robot2/target_pose', 10)
 
-        self.robot1_offset = np.array([0.0, 0.0, 0.0])  # Example offset for robot 1
-        self.robot2_offset = np.array([0.0, 0.0, 0.0]) # Example offset for robot 2
+        self.robot1_offset = np.array([0.0, -0.15, 0.0])  # Example offset for robot 1
+        self.robot2_offset = np.array([0.0, 0.15, 0.0]) # Example offset for robot 2
 
         self.get_logger().info("TargetHandler node started.")
         self.get_logger().info(f"Robot 1 base frame: {self.robot1_base_frame}")

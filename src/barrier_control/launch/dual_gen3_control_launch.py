@@ -172,7 +172,10 @@ def generate_launch_description():
     
     def launch_rigid_body_dynamics_controller(context):
         
-        control_frequency = 5.0  # Default control frequency
+        control_frequency = 10.0  # Default control frequency
+        kp_gains = [0.5] * 6  # Default Kp gains for the controller
+        kd_gains = [0.015] * 6  # Default Kd gains for the controller
+
         # --- Robot 1 Configuration ---
         robot1_namespace = 'robot1'
         robot1_controller_name = 'joint_trajectory_controller' \
@@ -315,9 +318,10 @@ def generate_launch_description():
                         'robot_tool_frame': f"{robot1_namespace}/end_effector_link",
                         # --- Controller Gains & Settings ---
                         # Kp gains [x, y, z, rx, ry, rz] - Tune these values!
-                        'K_P_initial_diag': [0.4]*6, # Reduced for slower movement
-                        'K_D_initial_diag': [0.015]*3 + [0.015] * 3,
+                        'K_P_initial_diag': kp_gains, # Reduced for slower movement
+                        'K_D_initial_diag': kd_gains,
                         'euler_input_convention': 'quat', # Convention for interpreting target orientation if given as Euler: 'xyz', 'zyx', etc.
+                        'jacobian_damping': 0.05, # Damping for pseudo-inverse singularity robustness (increased slightly)
                         # --- Joint Specific Settings ---
                         # IMPORTANT: List joint names in the order your robot model (and RTB) expects them.
                         'controlled_joint_names': [
@@ -529,10 +533,11 @@ def generate_launch_description():
                         'robot_base_frame': f"{robot2_namespace}/base_link",
                         'robot_tool_frame': f"{robot2_namespace}/end_effector_link",
                         # --- Controller Gains & Settings ---
-                        # Kp gains [x, y, z, rx, ry, rz] - Tune these values!
-                        'K_P_initial_diag': [0.5]*6, # Reduced for slower movement
-                        'K_D_initial_diag': [0.02]*3 + [0.015] * 3,
-                        'euler_input_convention': 'quat', # Convention for interpreting target orientation if given as Euler: 'xyz', 'zyx', etc.
+                        # Kp gains [x, y, z, rx, ry, rz] 
+                        'K_P_initial_diag': kp_gains, 
+                        'K_D_initial_diag': kd_gains,
+                        'euler_input_convention': 'quat', 
+                        'jacobian_damping': 0.05, 
                         # --- Joint Specific Settings ---
                         # IMPORTANT: List joint names in the order your robot model (and RTB) expects them.
                         'controlled_joint_names': [f'{robot2_namespace}/joint_1', f'{robot2_namespace}/joint_2', f'{robot2_namespace}/joint_3', f'{robot2_namespace}/joint_4', f'{robot2_namespace}/joint_5', f'{robot2_namespace}/joint_6'],

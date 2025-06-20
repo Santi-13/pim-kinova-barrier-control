@@ -42,6 +42,7 @@ class BarrierDynamicsController(Node):
         self.declare_parameter('cartesian_pos_tolerance', 0.01)  # meters
         self.declare_parameter('cartesian_rot_tolerance', 0.05) # radians (approx 2.8 degrees)   
         self.declare_parameter('robot_base_frame', 'base_link') # Default   
+        self.declare_parameter('robot_tool_frame', 'end_effector_link')
         
         use_fake_hardware = self.get_parameter('use_fake_hardware').value
         self.controller_frequency = self.get_parameter('controller_frequency').value
@@ -64,11 +65,12 @@ class BarrierDynamicsController(Node):
         self.declare_parameter('lambda_2_0', 0.1)
         self.declare_parameter('r_1', 1.4) # Exponent for adaptive terms
         self.declare_parameter('r_2', 2.0) # Exponent for adaptive terms
-        self.declare_parameter('K_P_initial_diag', [1.0]*6) # Initial diagonal values for K_P
-        self.declare_parameter('K_D_initial_diag', [1.0]*6)  # Initial diagonal values for K_D
+        # Proportional gains for [x, y, z, rot_x, rot_y, rot_z]
+        self.declare_parameter('K_P_initial_diag', [1.0, 1.0, 1.0, 0.5, 0.5, 0.5]) 
+        self.declare_parameter('K_D_initial_diag', [0.05, 0.05, 0.05, 0.02, 0.02, 0.02])
         self.declare_parameter('barrier_gain', 0.4)  # Gain for the q_dot_avoid term
         self.declare_parameter('h_denominator_offset', 0.01) # Small constant for h(x) denominator
-    
+        self.declare_parameter('jacobian_damping', 0.05)
 
         self.P = np.diag(self.get_parameter('P').get_parameter_value().double_array_value)        
         self.lambda_1_0 = self.get_parameter('lambda_1_0').value
@@ -79,7 +81,7 @@ class BarrierDynamicsController(Node):
         self.K_D = np.diag(self.get_parameter('K_D_initial_diag').value)
         self.barrier_gain_param = self.get_parameter('barrier_gain').get_parameter_value().double_value
         self.h_denominator_offset_param = self.get_parameter('h_denominator_offset').get_parameter_value().double_value
-        
+        self.jacobian_damping = self.get_parameter('jacobian_damping').value
 
         # Calculation parameters
         self.lambda_1 = 0.0
@@ -98,8 +100,8 @@ class BarrierDynamicsController(Node):
         self.joint_position_limits = np.array((min_position_limits_default, max_position_limits_default))
 
         if use_fake_hardware:
-            min_velocity_limits_default = [-0.35]*6
-            max_velocity_limits_default = [ 0.35]*6
+            min_velocity_limits_default = [-0.45]*6
+            max_velocity_limits_default = [ 0.45]*6
         else:
             min_velocity_limits_default = [-0.2]*6
             max_velocity_limits_default = [ 0.2]*6
@@ -182,7 +184,7 @@ class BarrierDynamicsController(Node):
              home_position_deg = [0.0, 15.0, -130.0, 0.0, 55.0, 90.0]
              home_position_rad = np.radians(home_position_deg)
              if len(home_position_rad) == len(self.controlled_joint_names):
-                 self.publish_target_joint_positions(home_position_rad, time_from_start=3.0)
+                 self.publish_target_joint_positions(home_position_rad, time_from_start=3.5)
              else:
                  self.get_logger().error(f"Home position length mismatch with controlled_joint_names. Skipping startup home.")
         else:
@@ -233,6 +235,87 @@ class BarrierDynamicsController(Node):
                 self.get_logger().error(f"Error during FK: {e}")
                 return None
         return None
+
+    def get_current_ee_pose_from_tf(self)-> PoseStamped | None:
+        """Fetches the current pose of the tool_frame relative to the base_frame."""
+        try:
+            # You might need to add 'tool_frame' as a parameter. For now, let's assume a default.
+            # You declared robot_base_frame, let's assume the tool_frame is 'tool0' or similar
+            # for Kinova, often specified in the URDF. Let's add a parameter for it.
+            tool_frame = self.get_parameter('robot_tool_frame').get_parameter_value().string_value
+
+            trans: tf2_ros.TransformStamped = self.tf_buffer.lookup_transform(
+                self.robot_base_frame,
+                tool_frame,
+                rclpy.time.Time(), # Get latest available transform
+                timeout=RclpyDuration(seconds=0.1)) # Shorter timeout for control loop
+
+            current_pose = PoseStamped()
+            current_pose.header.stamp = trans.header.stamp
+            current_pose.header.frame_id = self.robot_base_frame
+            current_pose.pose.position.x = trans.transform.translation.x
+            current_pose.pose.position.y = trans.transform.translation.y
+            current_pose.pose.position.z = trans.transform.translation.z
+            current_pose.pose.orientation = trans.transform.rotation
+            return current_pose
+        except (tf2_ros.LookupException, tf2_ros.ConnectivityException, tf2_ros.ExtrapolationException) as e:
+            self.get_logger().warn(f'Could not transform {tool_frame} to {self.robot_base_frame} for current pose: {e}', throttle_duration_sec=1.0)
+            return None
+
+    def calculate_pose_error(self, current_pose: PoseStamped, target_pose: PoseStamped) -> np.ndarray:
+        """Calculates the 6D pose error (position and orientation)."""
+        position_error = np.array([
+            target_pose.pose.position.x - current_pose.pose.position.x,
+            target_pose.pose.position.y - current_pose.pose.position.y,
+            target_pose.pose.position.z - current_pose.pose.position.z
+        ])
+        
+        q_target_msg = target_pose.pose.orientation
+        q_target_npq = quaternion.as_quat_array([
+            q_target_msg.w, q_target_msg.x,
+            q_target_msg.y, q_target_msg.z
+        ])
+
+        q_current_msg = current_pose.pose.orientation
+        q_current_npq = quaternion.as_quat_array([
+            q_current_msg.w, q_current_msg.x,
+            q_current_msg.y, q_current_msg.z
+        ])
+
+        # Error quaternion: q_err = q_target * q_current_conjugate
+        q_error = q_target_npq * q_current_npq.conjugate()
+
+        # The orientation error can be represented by the vector part of the error quaternion
+        # This vector represents an axis of rotation scaled by sin(theta/2).
+        # For small angles, this is approximately the axis-angle rotation vector.
+        # We multiply by 2 to better approximate the angle.
+        angular_error = 2.0 * q_error.vec
+        
+        # Ensure the rotation is the shortest path
+        if q_error.w < 0:
+            angular_error *= -1.0
+            
+        return np.concatenate((position_error, angular_error))
+
+    def calculate_jacobian(self):
+        """Calculates the geometric Jacobian in the base frame."""
+        try:
+            if self.robot is None or self.current_joint_positions is None:
+                return None
+            if len(self.current_joint_positions) != self.num_model_joints:
+                return None
+
+            # Use jacob0 for the Jacobian in the world/base frame
+            J_base = self.robot.jacob0(self.current_joint_positions) 
+
+            if J_base.shape == (6, self.num_model_joints):
+                return J_base
+            else:
+                self.get_logger().error(f"Jacobian shape mismatch: {J_base.shape}, expected (6, {self.num_model_joints})")
+                return None
+        except Exception as e:
+            self.get_logger().error(f"Error calculating Jacobian: {e}")
+            return None
     
     def calculate_cartesian_error_to_target(self, target_pose_ros: PoseStamped, current_pose_rtb: SE3) -> tuple[float, float]:
         """
@@ -464,7 +547,7 @@ class BarrierDynamicsController(Node):
         
         # If EE is double the radius away, return a very large x_plus to deactivate barrier
         if dist_obs_to_ee > (2.1 * obstacle_radius):
-            self.get_logger().info(f"Arm {self.arm_index} - EE is far from spherical obstacle (dist: {dist_obs_to_ee:.3f} > 2*R: {2*obstacle_radius:.3f}). Returning large x_plus.")
+            self.get_logger().debug(f"Arm {self.arm_index} - EE is far from spherical obstacle (dist: {dist_obs_to_ee:.3f} > 2*R: {2*obstacle_radius:.3f}). Returning large x_plus.")
             return 1e6
 
         closest_point_on_sphere_surface_to_ee = obstacle_center_base + obstacle_radius * (vec_obs_to_ee / dist_obs_to_ee)
@@ -678,34 +761,32 @@ class BarrierDynamicsController(Node):
         self.get_logger().info(f'Arm {self.arm_index} - Received new target pose in frame "{msg.header.frame_id}": Pos(x={msg.pose.position.x:.3f}, y={msg.pose.position.y:.3f}, z={msg.pose.position.z:.3f})') #
 
         # --- Prepare the pose that will be transformed ---
-        # This pose_for_transform initially holds the received pose data.
-        # If Euler conversion is needed, it's applied here first.
         pose_for_transform = PoseStamped()
         pose_for_transform.header = msg.header # Keep original header for TF lookup
-        pose_for_transform.pose.position = msg.pose.position #
+        pose_for_transform.pose.position = msg.pose.position 
         
         # Handle Euler input convention before transformation
-        if self.euler_input_convention == 'xyz': #
-            ros_q_x = msg.pose.orientation.x # Euler roll from message #
-            ros_q_y = msg.pose.orientation.y # Euler pitch from message #
-            ros_q_z = msg.pose.orientation.z # Euler yaw from message #
+        if self.euler_input_convention == 'xyz': 
+            ros_q_x = msg.pose.orientation.x # Euler roll from message 
+            ros_q_y = msg.pose.orientation.y # Euler pitch from message 
+            ros_q_z = msg.pose.orientation.z # Euler yaw from message 
             try:
-                hr, hp, hy = ros_q_x * 0.5, ros_q_y * 0.5, ros_q_z * 0.5 #
-                sr, cr = np.sin(hr), np.cos(hr) #
-                sp, cp = np.sin(hp), np.cos(hp) #
-                sy, cy = np.sin(hy), np.cos(hy) #
-                pose_for_transform.pose.orientation.w = cr * cp * cy + sr * sp * sy #
-                pose_for_transform.pose.orientation.x = sr * cp * cy - cr * sp * sy #
-                pose_for_transform.pose.orientation.y = cr * sp * cy + sr * cp * sy #
-                pose_for_transform.pose.orientation.z = cr * cp * sy - sr * sp * cy #
+                hr, hp, hy = ros_q_x * 0.5, ros_q_y * 0.5, ros_q_z * 0.5 
+                sr, cr = np.sin(hr), np.cos(hr) 
+                sp, cp = np.sin(hp), np.cos(hp) 
+                sy, cy = np.sin(hy), np.cos(hy) 
+                pose_for_transform.pose.orientation.w = cr * cp * cy + sr * sp * sy 
+                pose_for_transform.pose.orientation.x = sr * cp * cy - cr * sp * sy 
+                pose_for_transform.pose.orientation.y = cr * sp * cy + sr * cp * sy 
+                pose_for_transform.pose.orientation.z = cr * cp * sy - sr * sp * cy 
             except Exception as e:
-                self.get_logger().error(f"Error converting Euler to Quaternion: {e}") #
-                return #
-        elif self.euler_input_convention == 'quat': #
-            pose_for_transform.pose.orientation = msg.pose.orientation # Assumes valid quaternion in msg #
+                self.get_logger().error(f"Error converting Euler to Quaternion: {e}") 
+                return 
+        elif self.euler_input_convention == 'quat': 
+            pose_for_transform.pose.orientation = msg.pose.orientation # Assumes valid quaternion in msg 
         else:
-            self.get_logger().error(f"Euler input convention '{self.euler_input_convention}' not supported. Target not updated.") #
-            return #
+            self.get_logger().error(f"Euler input convention '{self.euler_input_convention}' not supported. Target not updated.") 
+            return 
 
         # --- Transform the target pose to the robot's base frame ---
         transformed_pose_stamped = None
@@ -715,10 +796,7 @@ class BarrierDynamicsController(Node):
         else:
             try:
                 self.get_logger().warn(f"Attempting to transform target pose from {pose_for_transform.header.frame_id} to {self.robot_base_frame}")
-                # It's good to wait for the transform to be available, especially at startup
-                # Timeout for waiting for the transform (e.g., 1 second)
-                # when = self.get_clock().now() - rclpy.time.Duration(seconds=0.1) # Transform slightly in the past
-                when = rclpy.time.Time() # Latest available
+
                 transformed_pose_stamped = self.tf_buffer.transform(
                     pose_for_transform,
                     self.robot_base_frame,
@@ -734,80 +812,18 @@ class BarrierDynamicsController(Node):
 
         # --- Use the transformed_pose_stamped for IK ---
         self.active_target_pose = transformed_pose_stamped # This is now in robot_base_frame
-        self.executing_cartesian_phase = True #
+        self.executing_cartesian_phase = True 
         self.target_reached_for_current_pose = False # Reset for new target
-        self.executing_j6_offset_phase = False  #
-        self.j6_target_q_during_offset = None   #
-        self.pose_error = np.zeros(6)       #
+        self.executing_j6_offset_phase = False  
+        self.j6_target_q_during_offset = None   
+
+        # Clear the old joint-space targets
+        self.target_joint_positions = None
+        self.target_joint_velocities = None
+
+        self.pose_error = np.zeros(6)       
         self.get_logger().info(f"Arm {self.arm_index} - New target set (in {self.robot_base_frame}). Engaging Cartesian phase.") #
 
-        # 2. Prepare inputs for IK (using self.active_target_pose)
-        if not (self.active_target_pose and self.robot): #
-            self.get_logger().warn(f"Arm {self.arm_index} - Cannot proceed with IK: No active target (post-transform) or robot model not loaded.") #
-            self.executing_cartesian_phase = False #
-            self.target_joint_positions = None #
-            return #
-
-        pos = self.active_target_pose.pose.position # This is now from the transformed pose #
-        orient_q_ros = self.active_target_pose.pose.orientation # Also from transformed pose #
-
-        try:
-            sm_quat = UnitQuaternion(s=orient_q_ros.w, v=[orient_q_ros.x, orient_q_ros.y, orient_q_ros.z]) #
-            target_pose_rtb = SE3(pos.x, pos.y, pos.z) * sm_quat.SE3() #
-        except Exception as e:
-            self.get_logger().error(f"Arm {self.arm_index} - Error creating SE3 for IK from transformed pose: {e}") #
-            self.target_joint_positions = None #
-            self.executing_cartesian_phase = False  #
-            return #
-
-        # ... (rest of your IK logic: q_initial_guess, self.robot.ikine_NR call, processing sol) ...
-        # Ensure that from this point onwards, self.active_target_pose is used,
-        # which now contains the pose in the robot's base frame.
-        if self.current_joint_positions is not None: #
-            q_initial_guess = np.array(self.current_joint_positions, dtype=np.float64) #
-            source_q0 = "current_joint_positions" #
-        else: #
-            q_initial_guess = np.zeros(self.num_model_joints, dtype=np.float64) #
-            source_q0 = "np.zeros" #
-        
-        self.get_logger().info(f"Arm {self.arm_index} - IK using q0 from {source_q0}: {[f'{ji:.3f}' for ji in q_initial_guess]}") #
-        self.get_logger().info(f"Arm {self.arm_index} - Attempting IK with ikine_NR for target in {self.robot_base_frame}. Tep:\n{target_pose_rtb}") #
-
-        sol = None #
-        try: #
-            if self.robot.qlim is None: 
-                self.get_logger().error(f"Arm {self.arm_index} - self.robot.qlim is None prior to ikine_NR call! Check load_robot_model.") 
-                self.target_joint_positions = None 
-                self.executing_cartesian_phase = False 
-                return 
-
-            sol = self.robot.ikine_LM( 
-                Tep=target_pose_rtb, 
-                q0=q_initial_guess, 
-                joint_limits=True 
-            )
-        except Exception as e:  
-            self.get_logger().error(f"General exception during ikine_NR call: {e}") 
-            self.target_joint_positions = None 
-            self.executing_cartesian_phase = False 
-            return 
-
-        if sol is None or not hasattr(sol, 'success'): 
-            self.get_logger().error(f"Arm {self.arm_index} - IK solution (sol) from ikine_NR is not the expected Solution object or is None. Type: {type(sol)}") 
-            self.target_joint_positions = None 
-            self.executing_cartesian_phase = False 
-            return 
-
-        if sol.success: 
-            self.target_joint_positions = sol.q 
-            self.get_logger().info(f"Arm {self.arm_index} - IK solution (ikine_NR) found: {[f'{ji:.3f}' for ji in sol.q]}, Iter: {sol.iterations}, Err: {sol.residual:.3e}") 
-            self.target_joint_velocities = np.zeros(self.num_model_joints, dtype=np.float64) # For setpoint 
-        else: 
-            self.target_joint_positions = None 
-            self.target_joint_velocities = None 
-            self.get_logger().warn(f"Arm {self.arm_index} - IK solution (ikine_NR) NOT found. Status: {sol.reason}, Iter: {sol.iterations}, Err: {sol.residual:.3e}") #
-            self.executing_cartesian_phase = False  
-    
 
     def dynamic_barrier_callback(self, msg: Float64MultiArray):
         """
@@ -844,13 +860,13 @@ class BarrierDynamicsController(Node):
                     # Optionally, send a hold command at the actual current (near home) position
                     self.publish_target_joint_positions(self.current_joint_positions, 2.0 / self.controller_frequency)
                 else:
-                    self.get_logger().debug(f"Arm {self.arm_index} - Homing in progress. PD control deferred. Max joint error to home: {math.degrees(np.max(joint_error_to_home)):.2f} deg", throttle_duration_sec=1.0)
+                    self.get_logger().warn(f"Arm {self.arm_index} - Homing in progress. PD control deferred. Max joint error to home: {math.degrees(np.max(joint_error_to_home)):.2f} deg", throttle_duration_sec=1.0)
                 # While homing, we let the JTC execute the trajectory sent from __init__.
                 # No new commands are sent from here unless homing is declared complete or we want active servoing to home.
                 return # Skip the rest of the PD control logic while homing command is executing or being checked
             else:
                 # Waiting for joint states to become available to check homing completion
-                self.get_logger().debug(f"Arm {self.arm_index} - Homing in progress, waiting for joint states to confirm completion.", throttle_duration_sec=1.0)
+                self.get_logger().warn(f"Arm {self.arm_index} - Homing in progress, waiting for joint states to confirm completion.", throttle_duration_sec=1.0)
                 return # Skip PD
             
         # --- 1. Prerequisite checks ---
@@ -863,6 +879,7 @@ class BarrierDynamicsController(Node):
         if self.joint_states_received_once is False:
             self.get_logger().warn("Joint states not received yet, skipping control step.", throttle_duration_sec=5)
             return
+        
 
         # --- 2. Handle "target reached and holding" state ---
         if not self.executing_cartesian_phase and self.target_reached_for_current_pose:
@@ -874,62 +891,81 @@ class BarrierDynamicsController(Node):
                 self.get_logger().debug(f"Arm {self.arm_index} - Holding position (target previously reached).", throttle_duration_sec=5)
             return
         
-        # --- 3. Handle "no active target" or "IK failed for current target" state (idle) ---
-        if self.active_target_pose is None or self.target_joint_positions is None:
-            # self.executing_cartesian_phase should be False if IK failed or no target.
-            self.get_logger().debug(f"Arm {self.arm_index} - Idle: No active target or target joints not computed.", throttle_duration_sec=5)
-            # The JTC should hold the last commanded position. If explicit re-commanding is needed for idle, add here.
+        
+        # --- 3. Handle "no active target" state (idle) ---
+        if self.active_target_pose is None:
+            self.get_logger().debug(f"Arm {self.arm_index} - Idle: No active target.", throttle_duration_sec=5)
             return
         
-        # --- 4. If we are in active Cartesian phase (executing_cartesian_phase is True) ---
+        
+        # --- 4. Active cartesian movement phase ---
         if self.executing_cartesian_phase:
-            # 4a. Check for error tolerance
-            current_ee_pose_rtb = self.get_current_ee_pose_in_base() #
-            if current_ee_pose_rtb: # active_target_pose is guaranteed to be not None here
-                pos_err_norm, rot_err_angle = self.calculate_cartesian_error_to_target(self.active_target_pose, current_ee_pose_rtb)
-                
-                # self.get_logger().warn(f"Arm {self.arm_index} - Cartesian Error: PosNorm={pos_err_norm:.4f}m, RotAngle={rot_err_angle:.4f}rad", throttle_duration_sec=1.0)
-
-                if pos_err_norm < self.cartesian_pos_tolerance and rot_err_angle < self.cartesian_rot_tolerance:
-                    self.get_logger().info(f"Arm {self.arm_index} - Target reached within tolerance. PosErr: {pos_err_norm:.4f}, RotErr: {rot_err_angle:.4f}. Switching to hold.")
-                    self.executing_cartesian_phase = False  # Stop active PD control for this target
-                    self.target_reached_for_current_pose = True # Mark current target as achieved
-
-                    # Publish one command to hold current joint positions
-                    if self.current_joint_positions is not None:
-                        time_to_command_hold = 2.0 / self.controller_frequency
-                        self.publish_target_joint_positions(self.current_joint_positions, time_to_command_hold)
-                    return # Done for this control cycle; holding logic will take over next cycle.
-
-            # --- 4b. If target not reached, proceed with PD Control ---
-            self.update_current_dynamic_x_plus() # This will set self.current_dynamic_x_plus #
+            self.get_logger().warn(f"Arm {self.arm_index} - Executing Cartesian phase control step.", throttle_duration_sec=5)
+            # 4.1. GET CURRENT STATE AND CALCULATE CARTESIAN ERROR
+            current_ee_pose = self.get_current_ee_pose_from_tf()
+            if current_ee_pose is None:
+                self.get_logger().warn("Could not get current EE pose, skipping control step.", throttle_duration_sec=1)
+                return
             
-            error_q = self.target_joint_positions - self.current_joint_positions  
-            error_q_dot = self.target_joint_velocities - self.current_joint_velocities 
+            pose_error = self.calculate_pose_error(current_ee_pose, self.active_target_pose)
+            
+            pos_err_norm = np.linalg.norm(pose_error[:3])
+            rot_err_norm = np.linalg.norm(pose_error[3:])
 
-            self.calculate_adaptive_terms() 
-            #Log lambda values
+            if pos_err_norm < self.cartesian_pos_tolerance and rot_err_norm < self.cartesian_rot_tolerance:
+                self.get_logger().info(f"Arm {self.arm_index} - Target reached. PosErr: {pos_err_norm:.4f}, RotErr: {rot_err_norm:.4f}. Switching to hold.")
+                self.executing_cartesian_phase = False
+                self.target_reached_for_current_pose = True
+                if self.current_joint_positions is not None:
+                    self.publish_target_joint_positions(self.current_joint_positions, 2.0 / self.controller_frequency)
+                return
+            
+            # 4.2. CALCULATE JACOBIAN-BASED JOINT VELOCITIES 
+            jacobian = self.calculate_jacobian()
+            if jacobian is None:
+                self.get_logger().warn("Jacobian not available, skipping control step.", throttle_duration_sec=1)
+                return
+            
+            # Calculate desired Cartesian velocity (PD control in Cartesian space)
+            v_current = jacobian @ self.current_joint_velocities.reshape(-1, 1)
+            v_desired_cartesian = self.K_P @ pose_error.reshape(-1, 1) - self.K_D @ v_current
+
+            # Use Damped Least Squares (pseudo-inverse) to get joint velocities
+            J_JT = jacobian @ jacobian.T
+            lambda_sq_I = (self.jacobian_damping**2) * np.eye(6)
+            J_pseudo_inv_dls = jacobian.T @ np.linalg.inv(J_JT + lambda_sq_I)
+            
+            pd_output_velocities = (J_pseudo_inv_dls @ v_desired_cartesian).flatten()
+
+            # 4.3. APPLY BARRIER LOGIC 
+            self.update_current_dynamic_x_plus()
+            self.calculate_adaptive_terms() # This calculates self.lambda_1 and self.lambda_2
+
             self.get_logger().warn(f"Arm {self.arm_index} - lambda_1 = {self.lambda_1:.2f}, lambda_2 = {self.lambda_2:.2f}")
-            
 
-            pd_output_velocities = self.K_P @ error_q + self.K_D @ error_q_dot 
-
-
-            # --- Apply Barrier Logic: Combine PD with scaled avoidance term ---
-            
-            # 1. Calculate the avoidance direction in joint space
             q_dot_avoid_direction = self.calculate_joint_space_barrier_gradient()
-
-            # 2. Scale the avoidance term by lambda_2 and a gain
-            # The barrier_gain_param allows you to tune the "strength" of the repulsion
             avoidance_term = self.lambda_2 * self.barrier_gain_param * q_dot_avoid_direction
 
-            # 3. Combine the goal-seeking term (PD) with the safety term (avoidance)
-            # The lambda_1 term scales down the movement towards the goal as you approach a barrier.
-            # The avoidance_term pushes you away from the barrier.
+            # Combine goal-seeking velocity with avoidance velocity
             joint_velocities_raw = (self.lambda_1 * pd_output_velocities) + avoidance_term
+            
+            # 4.4. LIMIT AND INTEGRATE VELOCITIES
+            joint_velocities_limited = np.clip(joint_velocities_raw,
+                                               self.joint_velocity_limits[0],
+                                               self.joint_velocity_limits[1])
+            
+            # Joint limit avoidance logic
+            if self.joint_position_limits is not None:
+                v_after_pos_limits = np.copy(joint_velocities_limited)
+                for i in range(self.num_model_joints):
+                    q_i, v_i = self.current_joint_positions[i], v_after_pos_limits[i]
+                    q_min_i, q_max_i = self.joint_position_limits[0, i], self.joint_position_limits[1, i]
+                    if (q_i <= (q_min_i + self.joint_limit_buffer_fval) and v_i < 0) or \
+                       (q_i >= (q_max_i - self.joint_limit_buffer_fval) and v_i > 0):
+                        v_after_pos_limits[i] = 0.0
+                joint_velocities_limited = v_after_pos_limits
 
-            # Updated logging to show all components
+            # Logging to show all components
             if not np.isclose(self.lambda_2, 0.0, atol=0.01): # Log if avoidance is active
                 self.get_logger().info(
                     f"Arm {self.arm_index} - Ctrl: L1={self.lambda_1:.2f}, L2={self.lambda_2:.2f} | "
@@ -940,48 +976,17 @@ class BarrierDynamicsController(Node):
                     throttle_duration_sec=0.2
                 )
 
-            if not np.isclose(self.lambda_1, 1.0):
-                self.get_logger().info(f"Arm {self.arm_index} - Lambda_1: {self.lambda_1:.3f} applied. Original PD: {[f'{v:.3f}' for v in pd_output_velocities]}, Scaled: {[f'{v:.3f}' for v in joint_velocities_raw]}", throttle_duration_sec=1.0)
+            # Integrate velocities to get the next target position
+            dt = 1.0 / self.controller_frequency
+            q_next_target = self.current_joint_positions + joint_velocities_limited * dt
 
-            joint_velocities_limited = np.clip(joint_velocities_raw.flatten(), #
-                                                self.joint_velocity_limits[0], #
-                                                self.joint_velocity_limits[1]) #
-            
-            
-            
-            # self.get_logger().error(f"Arm {self.arm_index} - Error q: {error_q}") #
-            # self.get_logger().error(f"Arm {self.arm_index} - Joint Velocities: {joint_velocities_raw}") #
-            # self.get_logger().error(f"Arm {self.arm_index} - Limited Velocities: {joint_velocities_limited}") #
-            
-            if self.joint_position_limits is not None and self.current_joint_positions is not None and \
-                len(joint_velocities_limited) == self.num_model_joints: #
-                v_after_pos_limits = np.copy(joint_velocities_limited) #
-                for i in range(self.num_model_joints): #
-                    q_i = self.current_joint_positions[i] #
-                    v_i = v_after_pos_limits[i] #
-                    q_min_i = self.joint_position_limits[0, i] #
-                    q_max_i = self.joint_position_limits[1, i] #
-                    if (q_i <= (q_min_i + self.joint_limit_buffer_fval) and v_i < 0) or \
-                       (q_i >= (q_max_i - self.joint_limit_buffer_fval) and v_i > 0): #
-                        v_after_pos_limits[i] = 0.0 #
-                joint_velocities_limited = v_after_pos_limits #
+            # Clip the final target position just in case
+            if self.joint_position_limits is not None:
+                q_next_target = np.clip(q_next_target, self.joint_position_limits[0, :], self.joint_position_limits[1, :])
 
-            dt = 1.0 / self.controller_frequency #
-            q_next_target = self.current_joint_positions + joint_velocities_limited * dt #
-
-            if self.joint_position_limits is not None: #
-                # Ensure buffer doesn't invert limits
-                min_lim_buffered = self.joint_position_limits[0, :] + self.joint_limit_buffer_fval / 2.0 #
-                max_lim_buffered = self.joint_position_limits[1, :] - self.joint_limit_buffer_fval / 2.0 #
-                # Ensure min_lim_buffered is actually less than max_lim_buffered for each joint
-                actual_min_lim = np.minimum(min_lim_buffered, max_lim_buffered)
-                actual_max_lim = np.maximum(min_lim_buffered, max_lim_buffered)
-                q_next_target = np.clip(q_next_target, actual_min_lim, actual_max_lim) #
-
-
-            # self.get_logger().info(f"Arm {self.arm_index} - Ctrl Step: q_next={[f'{x:.3f}' for x in q_next_target]}, err_q_norm={np.linalg.norm(error_q):.3f}, L1={self.lambda_1:.2f}") #
-            time_to_reach_next_point = 2.0 / self.controller_frequency # Use more stable timing
-            self.publish_target_joint_positions(q_next_target, time_to_reach_next_point) #
+            # Publish the next incremental joint target
+            time_to_reach_next_point = 2.0 / self.controller_frequency
+            self.publish_target_joint_positions(q_next_target, time_to_reach_next_point)
             return
 
         # --- 5. Fallback if none of the above states cleanly directed execution ---
