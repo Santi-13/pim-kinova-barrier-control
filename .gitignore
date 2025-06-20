@@ -13,3 +13,8 @@ log/
 # Ignore specific files
 gen3.urdf
 test.urdf
+
+# Ignore pychache
+__pycache__/
+# Ignore Python bytecode files
+*.pyc

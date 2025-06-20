@@ -172,7 +172,7 @@ def generate_launch_description():
     
     def launch_rigid_body_dynamics_controller(context):
         
-        control_frequency = 6.0  # Default control frequency
+        control_frequency = 5.0  # Default control frequency
         # --- Robot 1 Configuration ---
         robot1_namespace = 'robot1'
         robot1_controller_name = 'joint_trajectory_controller' \

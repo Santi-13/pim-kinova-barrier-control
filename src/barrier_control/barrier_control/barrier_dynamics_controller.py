@@ -5,6 +5,7 @@ from rclpy.duration import Duration as RclpyDuration
 import tf2_ros
 
 
+from std_msgs.msg import Float64MultiArray
 from sensor_msgs.msg import JointState
 from geometry_msgs.msg import PoseStamped
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
@@ -65,7 +66,7 @@ class BarrierDynamicsController(Node):
         self.declare_parameter('r_2', 2.0) # Exponent for adaptive terms
         self.declare_parameter('K_P_initial_diag', [1.0]*6) # Initial diagonal values for K_P
         self.declare_parameter('K_D_initial_diag', [1.0]*6)  # Initial diagonal values for K_D
-        self.declare_parameter('barrier_gain', 1.0/2)  # Gain for the q_dot_avoid term
+        self.declare_parameter('barrier_gain', 0.4)  # Gain for the q_dot_avoid term
         self.declare_parameter('h_denominator_offset', 0.01) # Small constant for h(x) denominator
     
 
@@ -110,7 +111,9 @@ class BarrierDynamicsController(Node):
         self.current_dynamic_x_plus = self.default_x_plus_boundary # Initialize with the default/max
         self.get_logger().info(f"Default x_plus boundary condition set to: {self.default_x_plus_boundary:.4f}")
 
-        # Subscribers 
+
+        # --- Subscribers ---
+        # Joint State
         self.joint_state_subscription = self.create_subscription(
             JointState, joint_state_topic, self.joint_state_callback, 10)
         self.get_logger().info(f"Subscribed to joint states on: {joint_state_topic}")
@@ -118,6 +121,7 @@ class BarrierDynamicsController(Node):
         self.current_joint_velocities = None
         self.joint_states_received_once = False # For robust startup
 
+        # Target Pose
         self.pose_target_subscription = self.create_subscription(
             PoseStamped, target_pose_topic, self.pose_target_callback, 10)
         self.active_target_pose: PoseStamped | None = None
@@ -125,8 +129,25 @@ class BarrierDynamicsController(Node):
         self.target_joint_velocities = None
         self.pose_error = np.zeros(6)
 
+        # Dynamic Barriers (The other robot)
+        if self.arm_index == 0:
+            self.dynamic_barrier_subscription = self.create_subscription(
+                Float64MultiArray, '/robot2/dynamic_joint_barriers', self.dynamic_barrier_callback, 10
+                )
+        else:
+            self.dynamic_barrier_subscription = self.create_subscription(
+                Float64MultiArray, '/robot1/dynamic_joint_barriers', self.dynamic_barrier_callback, 10
+                )
+        
+        self.static_obstacles = [
+            [0.0, -0.75, 0.6 , 0.1],
+            [-.1,  0.75, 0.4 , 0.3],
+            [0.25, 0.45, 0.55, 0.1]
+        ]
+        self.obstacles = [] # List to hold obstacles [x, y, z, radius] for spherical barriers
+    
 
-        # Publishers
+        # --- Publishers ---
         self.trajectory_pub = self.create_publisher(
             JointTrajectory, self.joint_trajectory_topic, 10)
         self.get_logger().info(f"Publishing joint trajectories to: {self.joint_trajectory_topic}")
@@ -166,7 +187,6 @@ class BarrierDynamicsController(Node):
                  self.get_logger().error(f"Home position length mismatch with controlled_joint_names. Skipping startup home.")
         else:
              self.get_logger().info("Current joint positions seem available. Skipping sending home position from __init__.")
-
 
 
         timer_period = 1.0 / self.controller_frequency
@@ -508,126 +528,59 @@ class BarrierDynamicsController(Node):
         candidate_x_plus_values = [self.default_x_plus_boundary] # Start with the most permissive boundary
 
         marker_array_msg = MarkerArray()
-        marker_id_counter = 0 # To give unique IDs to markers
-
-        # --- Example: Spherical Obstacle (coordinates in base frame) ---
-        obs1_center = np.array([0.0, -0.75, 0.6]) # Example obstacle
-        obs1_radius = 0.1
-        x_plus_obs1 = self.calculate_x_plus_for_spherical_obstacle(obs1_center, obs1_radius)
-        if x_plus_obs1 is not None and x_plus_obs1 > 0: # Ensure positive
-            candidate_x_plus_values.append(x_plus_obs1)
+        marker_id_counter = 1 # To give unique IDs to markers
         
-        # Add a marker for this sphere
-        sphere_marker_1 = Marker()
-        sphere_marker_1.header.frame_id = 'world' # IMPORTANT: Frame for the obstacle
-        sphere_marker_1.header.stamp = self.get_clock().now().to_msg()
-        sphere_marker_1.ns = f"spherical_obstacles_arm_{self.arm_index}_{marker_id_counter}"
-        sphere_marker_1.id = marker_id_counter
-        marker_id_counter += 1
-        sphere_marker_1.type = Marker.SPHERE
-        sphere_marker_1.action = Marker.ADD
+        static_obs_len = len(self.static_obstacles)
 
-        sphere_marker_1.pose.position.x = obs1_center[0]
-        sphere_marker_1.pose.position.y = obs1_center[1]
-        sphere_marker_1.pose.position.z = obs1_center[2]
-        sphere_marker_1.pose.orientation.w = 1.0 # Identity quaternion for a sphere
+        for obs in self.obstacles:
+            obs_center = np.array(obs[:3])
+            obs_radius = obs[3]
 
-        sphere_marker_1.scale.x = obs1_radius * 2.0 # Diameter
-        sphere_marker_1.scale.y = obs1_radius * 2.0
-        sphere_marker_1.scale.z = obs1_radius * 2.0
+            x_plus_obs = self.calculate_x_plus_for_spherical_obstacle(obs_center, obs_radius)
 
-        sphere_marker_1.color.r = 1.0  # Red
-        sphere_marker_1.color.g = 0.0
-        sphere_marker_1.color.b = 0.0
-        sphere_marker_1.color.a = 0.3  # Semi-transparent
+            if x_plus_obs is not None and x_plus_obs > 0: # Ensure positive
+                candidate_x_plus_values.append(x_plus_obs)
 
-        # sphere_marker_1.lifetime = RclpyDuration(seconds=0.0).to_msg() # 0 = infinite/persistent until deleted
-        # For dynamic obstacles, you might set a short lifetime or manage ADD/DELETE actions.
-        # For static ones, a longer lifetime or just publishing once might be okay,
-        # but periodic publishing ensures it reappears if RViz is restarted.
-        # Let's publish periodically by giving it a lifetime slightly longer than the update rate.
-        sphere_marker_1.lifetime = RclpyDuration(seconds=(1.0 / self.controller_frequency) * 10.0).to_msg()
+            # Only add markers for static obstacles
+            if marker_id_counter <= static_obs_len:
+                # Marker for this sphere
+                sphere_marker = Marker()
+                sphere_marker.header.frame_id = 'world' # IMPORTANT: Frame for the obstacle
+                sphere_marker.header.stamp = self.get_clock().now().to_msg()
+                sphere_marker.ns = f"spherical_obstacles_arm_{self.arm_index}_{marker_id_counter}"
+                sphere_marker.id = marker_id_counter
+                marker_id_counter += 1
+                sphere_marker.type = Marker.SPHERE
+                sphere_marker.action = Marker.ADD
 
+                sphere_marker.pose.position.x = obs_center[0]
+                sphere_marker.pose.position.y = obs_center[1]
+                sphere_marker.pose.position.z = obs_center[2]
+                sphere_marker.pose.orientation.w = 1.0 # Identity quaternion for a sphere
 
-        marker_array_msg.markers.append(sphere_marker_1)
+                sphere_marker.scale.x = obs_radius * 2.0 # Diameter
+                sphere_marker.scale.y = obs_radius * 2.0
+                sphere_marker.scale.z = obs_radius * 2.0
 
-        # --- Example: Spherical Obstacle 2 ---
-        obs2_center = np.array([0.0, 0.75, 0.4]) # Example obstacle
-        obs2_radius = 0.1
-        x_plus_obs2 = self.calculate_x_plus_for_spherical_obstacle(obs2_center, obs2_radius)
-        if x_plus_obs2 is not None and x_plus_obs2 > 0: # Ensure positive
-            candidate_x_plus_values.append(x_plus_obs2)
-        
-        # Add a marker for this sphere
-        sphere_marker_2 = Marker()
-        sphere_marker_2.header.frame_id = 'world' # IMPORTANT: Frame for the obstacle
-        sphere_marker_2.header.stamp = self.get_clock().now().to_msg()
-        sphere_marker_2.ns = f"spherical_obstacles_arm_{self.arm_index}_{marker_id_counter}"
-        sphere_marker_2.id = marker_id_counter
-        marker_id_counter += 1
-        sphere_marker_2.type = Marker.SPHERE
-        sphere_marker_2.action = Marker.ADD
-
-        sphere_marker_2.pose.position.x = obs2_center[0]
-        sphere_marker_2.pose.position.y = obs2_center[1]
-        sphere_marker_2.pose.position.z = obs2_center[2]
-        sphere_marker_2.pose.orientation.w = 1.0 # Identity quaternion for a sphere
-
-        sphere_marker_2.scale.x = obs2_radius * 2.0 # Diameter
-        sphere_marker_2.scale.y = obs2_radius * 2.0
-        sphere_marker_2.scale.z = obs2_radius * 2.0
-
-        sphere_marker_2.color.r = 0.0  # Red
-        sphere_marker_2.color.g = 0.0
-        sphere_marker_2.color.b = 1.0
-        sphere_marker_2.color.a = 0.3  # Semi-transparent
-
-        sphere_marker_2.lifetime = RclpyDuration(seconds=(1.0 / self.controller_frequency) * 10.0).to_msg()
-
-        marker_array_msg.markers.append(sphere_marker_2)
-
-        # --- Example: Spherical Obstacle 3 ---
-        obs3_center = np.array([0.25, 0.45, 0.55]) # Example obstacle
-        obs3_radius = 0.1
-        x_plus_obs3 = self.calculate_x_plus_for_spherical_obstacle(obs3_center, obs3_radius)
-        if x_plus_obs3 is not None and x_plus_obs3 > 0: # Ensure positive
-            candidate_x_plus_values.append(x_plus_obs3)
-        
-        # Add a marker for this sphere
-        sphere_marker_3 = Marker()
-        sphere_marker_3.header.frame_id = 'world' # IMPORTANT: Frame for the obstacle
-        sphere_marker_3.header.stamp = self.get_clock().now().to_msg()
-        sphere_marker_3.ns = f"spherical_obstacles_arm_{self.arm_index}_{marker_id_counter}"
-        sphere_marker_3.id = marker_id_counter
-        marker_id_counter += 1
-        sphere_marker_3.type = Marker.SPHERE
-        sphere_marker_3.action = Marker.ADD
-
-        sphere_marker_3.pose.position.x = obs3_center[0]
-        sphere_marker_3.pose.position.y = obs3_center[1]
-        sphere_marker_3.pose.position.z = obs3_center[2]
-        sphere_marker_3.pose.orientation.w = 1.0 # Identity quaternion for a sphere
-
-        sphere_marker_3.scale.x = obs3_radius * 2.0 # Diameter
-        sphere_marker_3.scale.y = obs3_radius * 2.0
-        sphere_marker_3.scale.z = obs3_radius * 2.0
-
-        sphere_marker_3.color.r = 0.0  # Red
-        sphere_marker_3.color.g = 1.0
-        sphere_marker_3.color.b = 0.0
-        sphere_marker_3.color.a = 0.3  # Semi-transparent
-
-        sphere_marker_3.lifetime = RclpyDuration(seconds=(1.0 / self.controller_frequency) * 10.0).to_msg()
-
-        marker_array_msg.markers.append(sphere_marker_3)
-        
-        # --- Robot-Robot Avoidance (Conceptual) ---
-        # If you have the state x_other_robot of the other robot, your markdown says:
-        # x_plus_inter_robot = some_function(x_other_robot) 
-        # You'd calculate this x_plus_inter_robot here and add to candidates.
-        # This x_plus_inter_robot would be the x_plus_current_dynamic value for one robot based on the other's state.
-        # Note that your BLF formulation implies x_plus is a function of the OTHER robot's state,
-        # so for robot i, x_plus_i = f(x_j). This x_plus_i is what robot i uses.
+                # Shift color based on marker_id_counter for visibility
+            
+                sphere_marker.color.a = 0.3  # Semi-transparent
+                if marker_id_counter % 3 == 0:
+                    sphere_marker.color.r = 0.0
+                    sphere_marker.color.g = 1.0  # Green
+                    sphere_marker.color.b = 0.0
+                elif marker_id_counter % 2 == 0:
+                    sphere_marker.color.r = 0.0
+                    sphere_marker.color.g = 0.0
+                    sphere_marker.color.b = 1.0  # Blue
+                else:
+                    sphere_marker.color.r = 1.0  # Red
+                    sphere_marker.color.g = 0.0
+                    sphere_marker.color.b = 0.0 
+            
+                sphere_marker.lifetime = RclpyDuration(seconds=(1.0 / self.controller_frequency) * 10.0).to_msg()
+                
+                marker_array_msg.markers.append(sphere_marker)
 
 
         # Publish the markers
@@ -822,39 +775,63 @@ class BarrierDynamicsController(Node):
 
         sol = None #
         try: #
-            if self.robot.qlim is None: #
-                self.get_logger().error(f"Arm {self.arm_index} - self.robot.qlim is None prior to ikine_NR call! Check load_robot_model.") #
-                self.target_joint_positions = None #
-                self.executing_cartesian_phase = False #
-                return #
+            if self.robot.qlim is None: 
+                self.get_logger().error(f"Arm {self.arm_index} - self.robot.qlim is None prior to ikine_NR call! Check load_robot_model.") 
+                self.target_joint_positions = None 
+                self.executing_cartesian_phase = False 
+                return 
 
-            sol = self.robot.ikine_LM( #
+            sol = self.robot.ikine_LM( 
                 Tep=target_pose_rtb, 
                 q0=q_initial_guess, 
                 joint_limits=True 
             )
-        except Exception as e:  #
-            self.get_logger().error(f"General exception during ikine_NR call: {e}") #
-            self.target_joint_positions = None #
-            self.executing_cartesian_phase = False #
-            return #
+        except Exception as e:  
+            self.get_logger().error(f"General exception during ikine_NR call: {e}") 
+            self.target_joint_positions = None 
+            self.executing_cartesian_phase = False 
+            return 
 
-        if sol is None or not hasattr(sol, 'success'): #
-            self.get_logger().error(f"Arm {self.arm_index} - IK solution (sol) from ikine_NR is not the expected Solution object or is None. Type: {type(sol)}") #
-            self.target_joint_positions = None #
-            self.executing_cartesian_phase = False #
-            return #
+        if sol is None or not hasattr(sol, 'success'): 
+            self.get_logger().error(f"Arm {self.arm_index} - IK solution (sol) from ikine_NR is not the expected Solution object or is None. Type: {type(sol)}") 
+            self.target_joint_positions = None 
+            self.executing_cartesian_phase = False 
+            return 
 
-        if sol.success: #
-            self.target_joint_positions = sol.q #
-            self.get_logger().info(f"Arm {self.arm_index} - IK solution (ikine_NR) found: {[f'{ji:.3f}' for ji in sol.q]}, Iter: {sol.iterations}, Err: {sol.residual:.3e}") #
-            self.target_joint_velocities = np.zeros(self.num_model_joints, dtype=np.float64) # For setpoint #
-        else: #
-            self.target_joint_positions = None #
-            self.target_joint_velocities = None #
+        if sol.success: 
+            self.target_joint_positions = sol.q 
+            self.get_logger().info(f"Arm {self.arm_index} - IK solution (ikine_NR) found: {[f'{ji:.3f}' for ji in sol.q]}, Iter: {sol.iterations}, Err: {sol.residual:.3e}") 
+            self.target_joint_velocities = np.zeros(self.num_model_joints, dtype=np.float64) # For setpoint 
+        else: 
+            self.target_joint_positions = None 
+            self.target_joint_velocities = None 
             self.get_logger().warn(f"Arm {self.arm_index} - IK solution (ikine_NR) NOT found. Status: {sol.reason}, Iter: {sol.iterations}, Err: {sol.residual:.3e}") #
-            self.executing_cartesian_phase = False  #
+            self.executing_cartesian_phase = False  
     
+
+    def dynamic_barrier_callback(self, msg: Float64MultiArray):
+        """
+        Callback to handle dynamic barrier updates.
+        """
+
+        self.obstacles = [] # Reset the dynamic obstacles list
+        for static_obstacle in self.static_obstacles:
+            self.obstacles.append(static_obstacle) # Add static obstacles to the dynamic list
+        
+        num_barriers = len(msg.data) // 4
+
+        for i in range(num_barriers):
+            barrier_point = [msg.data[i * 4], 
+                             msg.data[i * 4 + 1], 
+                             msg.data[i * 4 + 2],
+                             msg.data[i * 4 + 3]
+                             ] # Last value is the radius for spherical obstacles
+            
+            self.obstacles.append(barrier_point) # Add to the dynamic obstacles list
+        
+        self.get_logger().debug(f"Arm {self.arm_index} - Dynamic barriers updated. Total obstacles: {len(self.obstacles)}") # Log the number of obstacles
+
+        
     def control_step_callback(self):
         # --- Check for Homing Completion ---
         if self.homing_in_progress:

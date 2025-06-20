@@ -6,6 +6,7 @@ from ament_index_python.packages import get_package_share_directory
 from rclpy.duration import Duration as RclpyDuration
 
 from sensor_msgs.msg import JointState
+from std_msgs.msg import Float64MultiArray
 from visualization_msgs.msg import Marker, MarkerArray
 
 import numpy as np
@@ -36,7 +37,7 @@ class JointBarrierPublisher(Node):
             0.15, 0.15, 0.15, 0.1, 0.1, 0.08 # Radii in meters for each joint barrier
         ])
         self.declare_parameter('joint_state_topic', '/robot1/joint_states')
-        self.declare_parameter('joint_barriers_markers_topic', 'dynamic_joint_barriers_markers')
+        self.declare_parameter('joint_barriers_markers_topic', '/dynamic_joint_barriers_markers')
         self.declare_parameter('joint_barriers_topic', '/dynamic_joint_barriers')
         self.declare_parameter('robot_base_frame', 'base_link')
         self.declare_parameter('barrier_color', [0.0, 1.0, 1.0, 0.5]) # RGBA for cyan
@@ -49,6 +50,7 @@ class JointBarrierPublisher(Node):
         joint_state_topic = self.get_parameter('joint_state_topic').value
         
         joint_barriers_topic = self.get_parameter('joint_barriers_topic').value
+        joint_barriers_markers_topic = self.get_parameter('joint_barriers_markers_topic').value
         self.robot_base_frame = self.get_parameter('robot_base_frame').value
         self.barrier_color = self.get_parameter('barrier_color').value
 
@@ -64,8 +66,13 @@ class JointBarrierPublisher(Node):
         )
         self.get_logger().info(f"Subscribed to joint states on: {joint_state_topic}")
         self.marker_pub = self.create_publisher(
-            MarkerArray, joint_barriers_topic, 10
+            MarkerArray, joint_barriers_markers_topic, 10
         )
+        self.get_logger().info(f"Publishing markers to: {joint_barriers_markers_topic}")
+        self.barrier_pub = self.create_publisher(
+            Float64MultiArray, joint_barriers_topic, 10
+        )
+        
         self.get_logger().info(f"Publishing dynamic joint barriers to: {joint_barriers_topic}")
 
         # --- Load Robot Model ---
@@ -178,6 +185,7 @@ class JointBarrierPublisher(Node):
             return
 
         marker_array = MarkerArray()
+        barrier_data_list = [] # To store [x, y, z, radius] for each barrier
         
         # Link the barrier definitions to the actual links in the robot model
         for i, link_joint_name in enumerate(self.link_names_for_barriers):
@@ -220,6 +228,10 @@ class JointBarrierPublisher(Node):
                     
                     marker_array.markers.append(marker)
                     found_link = True
+
+                    # Add data for Float64MultiArray
+                    barrier_data_list.extend([float(link_position[0]), float(link_position[1]), float(link_position[2]), float(barrier_radius)])
+
                     break
             
             if not found_link:
@@ -229,6 +241,13 @@ class JointBarrierPublisher(Node):
         # Publish the complete array of markers
         if marker_array.markers:
             self.marker_pub.publish(marker_array)
+        
+        # Publish the barrier data as Float64MultiArray
+        if barrier_data_list:
+            barrier_msg = Float64MultiArray()
+            barrier_msg.data = barrier_data_list
+            self.barrier_pub.publish(barrier_msg)
+            # self.get_logger().debug(f"Published barrier data: {barrier_msg.data}")
 
 
 def main(args=None):

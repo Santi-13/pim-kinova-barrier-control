@@ -1,8 +1,6 @@
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Float64MultiArray
-import time
-from rclpy.parameter import ParameterType
 
 class SequencePublisherNode(Node):
     def __init__(self):
@@ -31,7 +29,7 @@ class SequencePublisherNode(Node):
             raw_sequence_from_param = [
                     [[0.4, -0.15, 0.7], [0.2, 0.65, 0.1]],  # Pair 1
                     [[0.5, -0.15, 0.5], [0.0, 0.65, 0.7]],  # Pair 2
-                    [[0.6, -0.15, 0.3], [-.25, 0.55, 0.55]]   # Pair 3
+                    [[0.6, -0.15, 0.3], [-.5, 0.45, 0.75]]   # Pair 3
                     
                 ]
 
