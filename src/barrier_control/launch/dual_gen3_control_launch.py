@@ -395,8 +395,12 @@ def generate_launch_description():
                             f'{robot1_namespace}/spherical_wrist_2_link', 
                             f'{robot1_namespace}/end_effector_link'
                         ],
-                        'joint_barrier_radii': [0.1, 0.1, 0.1, 0.1, 0.1, 0.08], # Radii in meters for each joint barrier
-                        'barrier_color': [0.0, 1.0, 1.0, 0.5], # RGBA color for the barriers
+                        'joint_barrier_radii': [0.1, 0.1, 0.1, 0.12, 0.11, 0.12], # Radii in meters for each joint barrier
+                        'barrier_color': [0.0, 1.0, 1.0, 0.25], # RGBA color for the barriers
+                        'num_intermediate_barriers': 2,
+                        'intermediate_barrier_start_link': f'{robot1_namespace}/forearm_link',
+                        'intermediate_barrier_end_link': f'{robot1_namespace}/spherical_wrist_1_link',
+                        
                         # --- Topic Names ---
                         'joint_state_topic': robot1_joint_state_topic,
                         'joint_barriers_markers_topic': f"dynamic_joint_barriers_markers", 
@@ -604,8 +608,12 @@ def generate_launch_description():
                             f'{robot2_namespace}/spherical_wrist_2_link', 
                             f'{robot2_namespace}/end_effector_link'
                         ],
-                        'joint_barrier_radii': [0.1, 0.1, 0.1, 0.1, 0.1, 0.08], # Radii in meters for each joint barrier
-                        'barrier_color': [0.6, 0.1, 0.1, 0.5], # RGBA color for the barriers
+                        'joint_barrier_radii': [0.1, 0.1, 0.1, 0.12, 0.11, 0.12], 
+                        'barrier_color': [0.6, 0.1, 0.1, 0.25], 
+                        'num_intermediate_barriers': 2,
+                        'intermediate_barrier_start_link': f'{robot2_namespace}/forearm_link',
+                        'intermediate_barrier_end_link': f'{robot2_namespace}/spherical_wrist_1_link',
+                        
                         # --- Topic Names ---
                         'joint_state_topic': robot2_joint_state_topic,
                         'joint_barriers_markers_topic': f"dynamic_joint_barriers_markers", 

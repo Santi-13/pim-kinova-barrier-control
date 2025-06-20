@@ -34,13 +34,19 @@ class JointBarrierPublisher(Node):
             'robot1/link_4', 'robot1/link_5', 'robot1/link_6'
         ])
         self.declare_parameter('joint_barrier_radii', [
-            0.15, 0.15, 0.15, 0.1, 0.1, 0.08 # Radii in meters for each joint barrier
+            0.15, 0.15, 0.15, 0.13, 0.1, 0.12 # Radii in meters for each joint barrier
         ])
         self.declare_parameter('joint_state_topic', '/robot1/joint_states')
         self.declare_parameter('joint_barriers_markers_topic', '/dynamic_joint_barriers_markers')
-        self.declare_parameter('joint_barriers_topic', '/dynamic_joint_barriers')
+        self.declare_parameter('joint_barriers_topic', '/dynamic_joint_barriers_data')
         self.declare_parameter('robot_base_frame', 'base_link')
         self.declare_parameter('barrier_color', [0.0, 1.0, 1.0, 0.5]) # RGBA for cyan
+        
+        # --- NEW PARAMETERS for intermediate barriers ---
+        self.declare_parameter('num_intermediate_barriers', 3) # n points between start and end
+        self.declare_parameter('intermediate_barrier_start_link', 'robot1/link_3')
+        self.declare_parameter('intermediate_barrier_end_link', 'robot1/link_4')
+
 
         # --- Get Parameters ---
         update_frequency = self.get_parameter('update_frequency').value
@@ -53,6 +59,11 @@ class JointBarrierPublisher(Node):
         joint_barriers_markers_topic = self.get_parameter('joint_barriers_markers_topic').value
         self.robot_base_frame = self.get_parameter('robot_base_frame').value
         self.barrier_color = self.get_parameter('barrier_color').value
+
+        # --- Get NEW PARAMETERS ---
+        self.num_intermediate_barriers = self.get_parameter('num_intermediate_barriers').value
+        self.intermediate_start_link = self.get_parameter('intermediate_barrier_start_link').value
+        self.intermediate_end_link = self.get_parameter('intermediate_barrier_end_link').value
 
         # --- State Variables ---
         self.robot = None
@@ -82,6 +93,8 @@ class JointBarrierPublisher(Node):
         self.timer = self.create_timer(1.0 / update_frequency, self.publish_barriers_callback)
 
         self.get_logger().info(f"Joint Barrier Publisher node has been initialized for joints: {self.joint_names_for_barriers}")
+        if self.num_intermediate_barriers > 0:
+            self.get_logger().info(f"Publishing {self.num_intermediate_barriers} intermediate barriers between '{self.intermediate_start_link}' and '{self.intermediate_end_link}'.")
 
 
     def load_robot(self):
@@ -178,7 +191,6 @@ class JointBarrierPublisher(Node):
             return
         
         try:
-            # fkine_all is efficient, computing FK for all links in one call
             all_link_poses = self.robot.fkine_all(self.current_joint_positions)
         except Exception as e:
             self.get_logger().error(f"Error during fkine_all: {e}")
@@ -187,56 +199,64 @@ class JointBarrierPublisher(Node):
         marker_array = MarkerArray()
         barrier_data_list = [] # To store [x, y, z, radius] for each barrier
         
-        # Link the barrier definitions to the actual links in the robot model
-        for i, link_joint_name in enumerate(self.link_names_for_barriers):
-            found_link = False
-            for link_idx, link in enumerate(self.robot.links):
-                # self.get_logger().info(f"Checking link {link.name} against barrier joint name '{link_joint_name}'")
-                if link.name == link_joint_name:
+        # For efficiency, create a map of link names to their poses
+        link_poses_map = {
+            link.name: all_link_poses[i] for i, link in enumerate(self.robot.links)
+            }
+
+        # --- 1. Publish barriers for the specified joints ---
+        for i, link_name in enumerate(self.link_names_for_barriers):
+            if link_name in link_poses_map:
+                link_pose = link_poses_map[link_name]
+                link_position = link_pose.t  # Translation vector [x, y, z]
+                barrier_radius = self.barrier_radii[i]
+
+                marker = self.create_barrier_marker(
+                    marker_id=i,
+                    position=link_position,
+                    radius=barrier_radius,
+                    ns="dynamic_joint_barriers"
+                )
+                marker_array.markers.append(marker)
+                barrier_data_list.extend([float(pos) for pos in link_position] + [float(barrier_radius)])
+            else:
+                self.get_logger().warn(f"Could not find link '{link_name}' in robot model.", throttle_duration_sec=10)
+
+        # --- 2. Publish intermediate barriers for the long link ---
+        if self.num_intermediate_barriers > 0:
+            if self.intermediate_start_link in link_poses_map and self.intermediate_end_link in link_poses_map:
+                p_start = link_poses_map[self.intermediate_start_link].t
+                p_end = link_poses_map[self.intermediate_end_link].t
+                
+                # Find the radius for the start link (e.g., joint3's radius)
+                try:
+                    start_link_index = self.link_names_for_barriers.index(self.intermediate_start_link)
+                    radius = self.barrier_radii[start_link_index]
+                except ValueError:
+                    self.get_logger().error(f"Start link '{self.intermediate_start_link}' for interpolation not found in 'link_names_for_barriers'. Cannot determine radius.")
+                    radius = 0.1 # Fallback radius
+
+
+                for i in range(self.num_intermediate_barriers):
+                    # Interpolate position along the line from p_start to p_end
+                    # The fraction is (i+1) / (n+1) to create n evenly spaced points
+                    fraction = (i + 1.0) / (self.num_intermediate_barriers + 1.0)
+                    interp_position = p_start + (p_end - p_start) * fraction
+
+                    # Create a unique ID for this intermediate marker
+                    marker_id = len(self.link_names_for_barriers) + i
                     
-                    link_pose = all_link_poses[link_idx]
-                    link_position = link_pose.t  # Translation vector [x, y, z]
-                    barrier_radius = self.barrier_radii[i]
-
-                    marker = Marker()
-                    marker.header.frame_id = 'world'
-                    marker.header.stamp = self.get_clock().now().to_msg()
-                    marker.ns = "dynamic_joint_barriers"
-                    marker.id = i
-                    marker.type = Marker.SPHERE
-                    marker.action = Marker.ADD
-
-                    # The position of the marker is the position of the joint
-                    marker.pose.position.x = float(link_position[0])
-                    marker.pose.position.y = float(link_position[1])
-                    marker.pose.position.z = float(link_position[2])
-                    marker.pose.orientation.w = 1.0 # Identity quaternion for a sphere
-
-                    # The scale is the diameter of the barrier sphere
-                    marker.scale.x = barrier_radius * 2.0
-                    marker.scale.y = barrier_radius * 2.0
-                    marker.scale.z = barrier_radius * 2.0
-
-                    # Set a nice color for visualization
-                    marker.color.r = self.barrier_color[0]
-                    marker.color.g = self.barrier_color[1]
-                    marker.color.b = self.barrier_color[2]
-                    marker.color.a = self.barrier_color[3]
-
-                    # Set a lifetime slightly longer than the publish interval to prevent flickering
-                    marker.lifetime = RclpyDuration(seconds=(1.0 / self.get_parameter('update_frequency').value) * 2.0).to_msg()
-                    
+                    marker = self.create_barrier_marker(
+                        marker_id=marker_id,
+                        position=interp_position,
+                        radius=radius,
+                        ns="intermediate_link_barriers" # Use a different namespace for clarity in RViz
+                    )
                     marker_array.markers.append(marker)
-                    found_link = True
+                    barrier_data_list.extend([float(pos) for pos in interp_position] + [float(radius)])
 
-                    # Add data for Float64MultiArray
-                    barrier_data_list.extend([float(link_position[0]), float(link_position[1]), float(link_position[2]), float(barrier_radius)])
-
-                    break
-            
-            if not found_link:
-                self.get_logger().warn(f"Could not find link corresponding to barrier name '{link_joint_name}' in robot model.", throttle_duration_sec=10)
-
+            else:
+                self.get_logger().warn(f"Could not find start ('{self.intermediate_start_link}') or end ('{self.intermediate_end_link}') link for intermediate barriers.", throttle_duration_sec=10)
 
         # Publish the complete array of markers
         if marker_array.markers:
@@ -247,7 +267,33 @@ class JointBarrierPublisher(Node):
             barrier_msg = Float64MultiArray()
             barrier_msg.data = barrier_data_list
             self.barrier_pub.publish(barrier_msg)
-            # self.get_logger().debug(f"Published barrier data: {barrier_msg.data}")
+
+    def create_barrier_marker(self, marker_id, position, radius, ns):
+        """Helper function to create a single SPHERE marker."""
+        marker = Marker()
+        marker.header.frame_id = 'world'
+        marker.header.stamp = self.get_clock().now().to_msg()
+        marker.ns = ns
+        marker.id = marker_id
+        marker.type = Marker.SPHERE
+        marker.action = Marker.ADD
+
+        marker.pose.position.x = float(position[0])
+        marker.pose.position.y = float(position[1])
+        marker.pose.position.z = float(position[2])
+        marker.pose.orientation.w = 1.0
+
+        marker.scale.x = radius * 2.0
+        marker.scale.y = radius * 2.0
+        marker.scale.z = radius * 2.0
+
+        marker.color.r = self.barrier_color[0]
+        marker.color.g = self.barrier_color[1]
+        marker.color.b = self.barrier_color[2]
+        marker.color.a = self.barrier_color[3]
+
+        marker.lifetime = RclpyDuration(seconds=(1.0 / self.get_parameter('update_frequency').value) * 2.0).to_msg()
+        return marker
 
 
 def main(args=None):

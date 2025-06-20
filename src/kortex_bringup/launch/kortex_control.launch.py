@@ -192,6 +192,7 @@ def launch_setup(context, *args, **kwargs):
     rviz_config_file = PathJoinSubstitution(
         [FindPackageShare(description_package.perform(context)), "rviz", rviz_file.perform(context)]
     )
+    
     control_node = Node(
         package="controller_manager",
         executable="ros2_control_node",
