@@ -82,6 +82,17 @@ class BarrierDynamicsController(Node):
         self.barrier_gain_param = self.get_parameter('barrier_gain').get_parameter_value().double_value
         self.h_denominator_offset_param = self.get_parameter('h_denominator_offset').get_parameter_value().double_value
         self.jacobian_damping = self.get_parameter('jacobian_damping').value
+        
+        # Partition P matrix for analytical gradient
+        n = self.num_model_joints
+        if self.P.shape == (2*n, 2*n):
+            self.P_qq = self.P[0:n, 0:n]
+            self.P_qv = self.P[0:n, n:2*n]
+            self.get_logger().info("Successfully partitioned P matrix for analytical gradient.")
+        else:
+            self.get_logger().error(f"P matrix shape is {self.P.shape}, expected ({2*n}, {2*n}). Cannot partition.")
+            self.P_qq = None
+            self.P_qv = None
 
         # Calculation parameters
         self.lambda_1 = 0.0
@@ -122,6 +133,7 @@ class BarrierDynamicsController(Node):
         self.current_joint_positions = None
         self.current_joint_velocities = None
         self.joint_states_received_once = False # For robust startup
+        self.joint_state_index_map = None
 
         # Target Pose
         self.pose_target_subscription = self.create_subscription(
@@ -154,10 +166,11 @@ class BarrierDynamicsController(Node):
             JointTrajectory, self.joint_trajectory_topic, 10)
         self.get_logger().info(f"Publishing joint trajectories to: {self.joint_trajectory_topic}")
 
-        # --- Marker Publisher for Visualizations ---
+        # Marker Publisher for Visualizations 
         self.marker_pub = self.create_publisher(MarkerArray, f'arm_{self.arm_index}/barrier_visuals', 10)
-        self.get_logger().info(f"Publishing barrier visualizations to: arm_{self.arm_index}/barrier_visuals")
-
+        visualization_frequency = self.controller_frequency // 2  # Hz, much lower than control frequency
+        self.visualization_timer = self.create_timer(1.0 / visualization_frequency, self.publish_visualization_markers)
+        # self.get_logger().info(f"Publishing barrier visualizations at {visualization_frequency} Hz.")
 
         # Flags and state for sequential motion
         self.executing_cartesian_phase = False
@@ -316,96 +329,31 @@ class BarrierDynamicsController(Node):
         except Exception as e:
             self.get_logger().error(f"Error calculating Jacobian: {e}")
             return None
-    
-    def calculate_cartesian_error_to_target(self, target_pose_ros: PoseStamped, current_pose_rtb: SE3) -> tuple[float, float]:
-        """
-        Calculates the norm of position error and the angle of orientation error.
-        target_pose_ros: The desired pose as a PoseStamped message.
-        current_pose_rtb: The current pose as an SE3 object from roboticstoolbox.
-        Returns: tuple (position_error_norm, orientation_error_angle)
-        """
-        # Position error (remains the same)
-        target_pos_vec = np.array([
-            target_pose_ros.pose.position.x,
-            target_pose_ros.pose.position.y,
-            target_pose_ros.pose.position.z
-        ])
-        current_pos_vec = current_pose_rtb.t #
-        pos_error_norm = np.linalg.norm(target_pos_vec - current_pos_vec)
 
-        # Orientation error using numpy-quaternion
-        q_target_msg = target_pose_ros.pose.orientation #
-        # numpy-quaternion.quaternion constructor takes (w, x, y, z)
-        q_target_npq = quaternion.as_quat_array([
-            q_target_msg.w, q_target_msg.x,
-            q_target_msg.y, q_target_msg.z
-        ])
-            
-        # Convert current SE3 orientation (from roboticstoolbox FK) to numpy-quaternion
-        # First, get spatialmath UnitQuaternion from the rotation matrix
-        sm_q_current = UnitQuaternion(current_pose_rtb.R) #
-        # Then convert to numpy-quaternion format (w, x, y, z)
-        q_current_npq = quaternion.as_quat_array([
-            sm_q_current.s, sm_q_current.v[0],
-            sm_q_current.v[1], sm_q_current.v[2]
-        ])
-
-        # Error quaternion: q_err = q_target * q_current_conjugate
-        # This represents the rotation needed to go from current orientation to target orientation.
-        q_err_npq = q_target_npq * q_current_npq.conjugate()
-
-        # Ensure the error quaternion represents the shortest rotation path (w >= 0).
-        # If w is negative, the rotation is > 180 degrees around some axis.
-        # Negating the quaternion (all components w,x,y,z) gives an equivalent rotation
-        # but with a positive w and an angle <= 180 degrees.
-        if q_err_npq.w < 0:
-            q_err_npq = -q_err_npq
-
-        # The angle of rotation theta for a quaternion (w, x, y, z) is 2 * acos(w).
-        # We clip w to the range [-1.0, 1.0] to prevent math errors from floating point inaccuracies.
-        w_error_clipped = np.clip(q_err_npq.w, -1.0, 1.0)
-        orientation_error_angle = 2 * np.arccos(w_error_clipped)
-
-        return pos_error_norm, orientation_error_angle
     
     def calculate_joint_space_barrier_gradient(self) -> np.ndarray:
         """
         Calculates the gradient of the barrier function h(q) w.r.t. joint angles q
-        using numerical finite differences. This gradient vector represents the direction
-        of "steepest ascent" away from the barrier in joint space.
+        using the analytical derivative, which is significantly faster than finite differences.
+        The gradient is -∇_q(xᵀPx) = -(2 * P_qq * q + 2 * P_qv * q̇).
         """
         if self.current_joint_positions is None or self.current_joint_velocities is None:
             return np.zeros(self.num_model_joints)
-
-        # The state vector x is [q, q_dot]
-        x_current = np.concatenate((self.current_joint_positions, self.current_joint_velocities))
         
-        # Calculate h(q) at the current position
-        norm_x_current_sq = self.norm_squared_P(x_current, self.P)
-        h_current = self.current_dynamic_x_plus - norm_x_current_sq
+        if self.P_qq is None or self.P_qv is None:
+            self.get_logger().error("P matrix partitions not available for gradient calculation.", throttle_duration_sec=5)
+            return np.zeros(self.num_model_joints)
 
-        # The gradient vector to be populated
-        grad_h = np.zeros(self.num_model_joints)
-        
-        # A small perturbation for finite differences
-        delta = 0.001  # radians
+        q = self.current_joint_positions
+        q_dot = self.current_joint_velocities
 
-        for i in range(self.num_model_joints):
-            # Create a perturbed joint position vector
-            q_perturbed = np.copy(self.current_joint_positions)
-            q_perturbed[i] += delta
+        # Calculate the gradient of the quadratic form x^T*P*x w.r.t. q
+        grad_xT_P_x = 2 * (self.P_qq @ q + self.P_qv @ q_dot)
 
-            # Create the corresponding perturbed state vector x
-            x_perturbed = np.concatenate((q_perturbed, self.current_joint_velocities)) # Assume velocities are constant for this small change
-
-            # Calculate h(q) at the perturbed position
-            norm_x_perturbed_sq = self.norm_squared_P(x_perturbed, self.P)
-            h_perturbed = self.current_dynamic_x_plus - norm_x_perturbed_sq
-
-            # Calculate the i-th component of the gradient
-            grad_h[i] = (h_perturbed - h_current) / delta
-            
-        # Normalize the gradient to get a direction vector (optional but good practice)
+        # The gradient of h is the negative of the gradient of the quadratic form
+        grad_h = -grad_xT_P_x
+                
+        # Normalize the gradient to get a direction vector
         norm_grad = np.linalg.norm(grad_h)
         if norm_grad > 1e-6:
             return grad_h / norm_grad
@@ -610,11 +558,6 @@ class BarrierDynamicsController(Node):
         """
         candidate_x_plus_values = [self.default_x_plus_boundary] # Start with the most permissive boundary
 
-        marker_array_msg = MarkerArray()
-        marker_id_counter = 1 # To give unique IDs to markers
-        
-        static_obs_len = len(self.static_obstacles)
-
         for obs in self.obstacles:
             obs_center = np.array(obs[:3])
             obs_radius = obs[3]
@@ -623,52 +566,6 @@ class BarrierDynamicsController(Node):
 
             if x_plus_obs is not None and x_plus_obs > 0: # Ensure positive
                 candidate_x_plus_values.append(x_plus_obs)
-
-            # Only add markers for static obstacles
-            if marker_id_counter <= static_obs_len:
-                # Marker for this sphere
-                sphere_marker = Marker()
-                sphere_marker.header.frame_id = 'world' # IMPORTANT: Frame for the obstacle
-                sphere_marker.header.stamp = self.get_clock().now().to_msg()
-                sphere_marker.ns = f"spherical_obstacles_arm_{self.arm_index}_{marker_id_counter}"
-                sphere_marker.id = marker_id_counter
-                marker_id_counter += 1
-                sphere_marker.type = Marker.SPHERE
-                sphere_marker.action = Marker.ADD
-
-                sphere_marker.pose.position.x = obs_center[0]
-                sphere_marker.pose.position.y = obs_center[1]
-                sphere_marker.pose.position.z = obs_center[2]
-                sphere_marker.pose.orientation.w = 1.0 # Identity quaternion for a sphere
-
-                sphere_marker.scale.x = obs_radius * 2.0 # Diameter
-                sphere_marker.scale.y = obs_radius * 2.0
-                sphere_marker.scale.z = obs_radius * 2.0
-
-                # Shift color based on marker_id_counter for visibility
-            
-                sphere_marker.color.a = 0.3  # Semi-transparent
-                if marker_id_counter % 3 == 0:
-                    sphere_marker.color.r = 0.0
-                    sphere_marker.color.g = 1.0  # Green
-                    sphere_marker.color.b = 0.0
-                elif marker_id_counter % 2 == 0:
-                    sphere_marker.color.r = 0.0
-                    sphere_marker.color.g = 0.0
-                    sphere_marker.color.b = 1.0  # Blue
-                else:
-                    sphere_marker.color.r = 1.0  # Red
-                    sphere_marker.color.g = 0.0
-                    sphere_marker.color.b = 0.0 
-            
-                sphere_marker.lifetime = RclpyDuration(seconds=(1.0 / self.controller_frequency) * 10.0).to_msg()
-                
-                marker_array_msg.markers.append(sphere_marker)
-
-
-        # Publish the markers
-        if marker_array_msg.markers:
-            self.marker_pub.publish(marker_array_msg)
 
 
         positive_candidates = [c for c in candidate_x_plus_values if c > 0] # Ensure we only consider positive x_plus
@@ -717,41 +614,35 @@ class BarrierDynamicsController(Node):
             self.get_logger().debug("Robot model not loaded or num_model_joints is zero, skipping joint state processing.", throttle_duration_sec=5)
             return
         
-        # self.get_logger().error(f"Received JointState msg.name: {msg.name}", throttle_duration_sec=5) # ADD THIS LINE FOR DEBUGGING
-
+        # First time receiving a message, build the index map
+        if self.joint_state_index_map is None:
+            try:
+                # Create a list of indices into the message's arrays
+                self.joint_state_index_map = [msg.name.index(name) for name in self.controlled_joint_names]
+                self.get_logger().info(f"Successfully created joint state index map: {self.joint_state_index_map}")
+            except ValueError as e:
+                self.get_logger().error(f"Could not create joint state index map. A controlled joint is not in the JointState message: {e}")
+                self.joint_state_index_map = None # Reset to try again next time
+                return
+            
         try:
-            num_controlled = len(self.controlled_joint_names)
-            new_positions = np.zeros(num_controlled)
-            new_velocities = np.zeros(num_controlled)
-            all_controlled_joints_found = True
+            # Use the map to gather positions and velocities in the correct order
+            self.current_joint_positions = np.array([msg.position[i] for i in self.joint_state_index_map])
+            
+            if msg.velocity:
+                self.current_joint_velocities = np.array([msg.velocity[i] for i in self.joint_state_index_map])
+            else:
+                self.current_joint_velocities = np.zeros(self.num_model_joints)
 
-            for i, name in enumerate(self.controlled_joint_names):
-                try:
-                    idx_in_msg = msg.name.index(name)
-                    new_positions[i] = msg.position[idx_in_msg]
-                    if msg.velocity and len(msg.velocity) > idx_in_msg:
-                        new_velocities[i] = msg.velocity[idx_in_msg]
-                    else:
-                        new_velocities[i] = 0.0
-                except ValueError:
-                    # self.get_logger().warn(f"Controlled joint '{name}' not found in JointState. Available: {msg.name}", throttle_duration_sec=10)
-                    all_controlled_joints_found = False
-                    break
-
-            if all_controlled_joints_found:
-                self.current_joint_positions = new_positions
-                self.current_joint_velocities = new_velocities
-                # self.get_logger().error(f"Arm {self.arm_index} - Joint states updated: Pos={self.current_joint_positions}, Vel={self.current_joint_velocities}")
-
-                self.x = np.concatenate((self.current_joint_positions, self.current_joint_velocities))
-                if not self.joint_states_received_once:
-                    self.get_logger().info("First joint states received.")
-                    self.joint_states_received_once = True
-
+            self.x = np.concatenate((self.current_joint_positions, self.current_joint_velocities))
+            if not self.joint_states_received_once:
+                self.get_logger().info("First joint states received.")
+                self.joint_states_received_once = True
+                
+        except IndexError:
+            self.get_logger().warn("IndexError while parsing joint states. Message length may have changed.", throttle_duration_sec=5)
         except Exception as e:
-            self.get_logger().error(f"Error processing joint states: {e}")
-            self.current_joint_positions = None
-            self.current_joint_velocities = None
+            self.get_logger().error(f"Error processing joint states with index map: {e}")
     
     def pose_target_callback(self, msg: PoseStamped): #
         if self.homing_in_progress:
@@ -847,6 +738,58 @@ class BarrierDynamicsController(Node):
         
         self.get_logger().debug(f"Arm {self.arm_index} - Dynamic barriers updated. Total obstacles: {len(self.obstacles)}") # Log the number of obstacles
 
+    def publish_visualization_markers(self):
+        # This method ONLY handles visualization
+        if not self.obstacles:
+            return
+            
+        marker_array_msg = MarkerArray()
+        marker_id_counter = 1 # To give unique IDs to markers
+
+        for i, obs in enumerate(self.static_obstacles):
+            obs_center = np.array(obs[:3])
+            obs_radius = obs[3]
+
+            sphere_marker = Marker()
+            sphere_marker.header.frame_id = 'world'
+            sphere_marker.header.stamp = self.get_clock().now().to_msg()
+            sphere_marker.ns = f"spherical_obstacles_arm_{self.arm_index}_{i}"
+            sphere_marker.id = marker_id_counter
+            marker_id_counter += 1
+            sphere_marker.type = Marker.SPHERE
+            sphere_marker.action = Marker.ADD
+
+            sphere_marker.pose.position.x = obs_center[0]
+            sphere_marker.pose.position.y = obs_center[1]
+            sphere_marker.pose.position.z = obs_center[2]
+            sphere_marker.pose.orientation.w = 1.0 # Identity quaternion for a sphere
+
+            sphere_marker.scale.x = obs_radius * 2.0 # Diameter
+            sphere_marker.scale.y = obs_radius * 2.0
+            sphere_marker.scale.z = obs_radius * 2.0
+
+            # Shift color based on marker_id_counter for visibility
+        
+            sphere_marker.color.a = 0.3  # Semi-transparent
+            if marker_id_counter % 3 == 0:
+                sphere_marker.color.r = 0.0
+                sphere_marker.color.g = 1.0  # Green
+                sphere_marker.color.b = 0.0
+            elif marker_id_counter % 2 == 0:
+                sphere_marker.color.r = 0.0
+                sphere_marker.color.g = 0.0
+                sphere_marker.color.b = 1.0  # Blue
+            else:
+                sphere_marker.color.r = 1.0  # Red
+                sphere_marker.color.g = 0.0
+                sphere_marker.color.b = 0.0 
+        
+            sphere_marker.lifetime = RclpyDuration(seconds=(1.0 / self.controller_frequency) * 10.0).to_msg()
+                
+            marker_array_msg.markers.append(sphere_marker)
+            
+        if marker_array_msg.markers:
+            self.marker_pub.publish(marker_array_msg)
         
     def control_step_callback(self):
         # --- Check for Homing Completion ---
@@ -886,8 +829,8 @@ class BarrierDynamicsController(Node):
             # Target was previously reached for the current self.active_target_pose.
             # Publish a command to hold the current joint positions.
             if self.current_joint_positions is not None:
-                time_to_command_hold = 2.0 / self.controller_frequency # Consistent duration
-                self.publish_target_joint_positions(self.current_joint_positions, time_to_command_hold)
+                # time_to_command_hold = 2.0 / self.controller_frequency # Consistent duration
+                # self.publish_target_joint_positions(self.current_joint_positions, time_to_command_hold)
                 self.get_logger().debug(f"Arm {self.arm_index} - Holding position (target previously reached).", throttle_duration_sec=5)
             return
         
@@ -956,14 +899,17 @@ class BarrierDynamicsController(Node):
             
             # Joint limit avoidance logic
             if self.joint_position_limits is not None:
-                v_after_pos_limits = np.copy(joint_velocities_limited)
-                for i in range(self.num_model_joints):
-                    q_i, v_i = self.current_joint_positions[i], v_after_pos_limits[i]
-                    q_min_i, q_max_i = self.joint_position_limits[0, i], self.joint_position_limits[1, i]
-                    if (q_i <= (q_min_i + self.joint_limit_buffer_fval) and v_i < 0) or \
-                       (q_i >= (q_max_i - self.joint_limit_buffer_fval) and v_i > 0):
-                        v_after_pos_limits[i] = 0.0
-                joint_velocities_limited = v_after_pos_limits
+                q_curr = self.current_joint_positions
+                q_min = self.joint_position_limits[0, :] + self.joint_limit_buffer_fval
+                q_max = self.joint_position_limits[1, :] - self.joint_limit_buffer_fval
+                
+                # Create boolean masks
+                at_lower_limit = (q_curr <= q_min) & (joint_velocities_limited < 0)
+                at_upper_limit = (q_curr >= q_max) & (joint_velocities_limited > 0)
+                
+                # Combine masks and set velocity to 0 where the condition is true
+                at_any_limit = at_lower_limit | at_upper_limit
+                joint_velocities_limited[at_any_limit] = 0.0
 
             # Logging to show all components
             if not np.isclose(self.lambda_2, 0.0, atol=0.01): # Log if avoidance is active

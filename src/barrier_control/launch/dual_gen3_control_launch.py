@@ -172,8 +172,8 @@ def generate_launch_description():
     
     def launch_rigid_body_dynamics_controller(context):
         
-        control_frequency = 10.0  # Default control frequency
-        kp_gains = [0.5] * 6  # Default Kp gains for the controller
+        control_frequency = 3.0  # Default control frequency
+        kp_gains = [0.4] * 6  # Default Kp gains for the controller
         kd_gains = [0.015] * 6  # Default Kd gains for the controller
 
         # --- Robot 1 Configuration ---
