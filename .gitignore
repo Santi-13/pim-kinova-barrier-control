@@ -1,20 +1,16 @@
-# Ignore build directory
-build/
+# Ignore build, install, and log spaces
+/build/
+/install/
+/log/
 
-# Ignore install directory
-install/
-
-# Ignore log directory
-log/
-
-# Ignore .vscode folder
+# Ignore common IDE and system files
 .vscode/
+*.swp
+*~
 
-# Ignore specific files
-gen3.urdf
-test.urdf
+# Ignore all packages in the src directory by default
+/src/*
 
-# Ignore pychache
-__pycache__/
-# Ignore Python bytecode files
-*.pyc
+# Explicitly UN-ignore main packages
+!/src/barrier_control/
+!/src/bravo_amr/
