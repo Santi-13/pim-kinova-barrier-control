@@ -1,0 +1,13 @@
+train: ../train/images
+val: ../valid/images
+test: ../test/images
+
+nc: 6
+names: ['Beaker', 'Pear shaped flask', 'Test tube', 'Titrarion', 'Volumetric flask', 'object']
+
+roboflow:
+  workspace: anusha-3rol4
+  project: flask-name
+  version: 2
+  license: CC BY 4.0
+  url: https://universe.roboflow.com/anusha-3rol4/flask-name/dataset/2
