@@ -1,0 +1,5 @@
+repositories:
+  src/ros2_kortex:
+    type: git
+    url: https://github.com/Santi-13/ros2_kortex.git
+    version: main
